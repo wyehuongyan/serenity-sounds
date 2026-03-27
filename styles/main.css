@@ -1090,59 +1090,7 @@ input {
 
   .input-wrap {
     width: min(520px, calc(100vw - 32px));
-    gap: 18px;
-  }
-
-  #phase-input.touch-mash-mode .mash-surface {
-    position: relative;
-    display: flex;
-    width: min(520px, calc(100vw - 40px));
-    min-height: 112px;
-    border-radius: 30px;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    background:
-      radial-gradient(circle at 22% 35%, rgba(255, 255, 255, 0.08), transparent 38%),
-      radial-gradient(circle at 76% 68%, rgba(255, 255, 255, 0.05), transparent 34%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(0, 0, 0, 0.07));
-    border: 1px solid rgba(var(--accent-rgb), 0.1);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06),
-      inset 0 -22px 44px rgba(0, 0, 0, 0.14),
-      0 18px 42px rgba(0, 0, 0, 0.08);
-    user-select: none;
-    -webkit-user-select: none;
-  }
-
-  #phase-input.touch-mash-mode .mash-surface-ink {
-    position: absolute;
-    inset: 18px 20px;
-    border-radius: 22px;
-    background:
-      radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.09), transparent 24%),
-      radial-gradient(circle at 48% 84%, rgba(0, 0, 0, 0.28), transparent 52%),
-      linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.1));
-    opacity: 0.92;
-  }
-
-  .light-mode #phase-input.touch-mash-mode .mash-surface {
-    background:
-      radial-gradient(circle at 22% 35%, rgba(255, 255, 255, 0.62), transparent 36%),
-      radial-gradient(circle at 76% 68%, rgba(255, 255, 255, 0.32), transparent 34%),
-      linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(240, 231, 212, 0.72));
-    border-color: rgba(180, 146, 78, 0.18);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.78),
-      inset 0 -18px 40px rgba(110, 88, 36, 0.08),
-      0 16px 36px rgba(109, 88, 47, 0.1);
-  }
-
-  .light-mode #phase-input.touch-mash-mode .mash-surface-ink {
-    background:
-      radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.35), transparent 24%),
-      radial-gradient(circle at 48% 84%, rgba(56, 45, 22, 0.22), transparent 52%),
-      linear-gradient(180deg, rgba(40, 31, 21, 0.5), rgba(70, 52, 28, 0.2));
+    gap: 14px;
   }
 
   #phase-input.touch-mash-mode .mash-surface-label {
@@ -1157,7 +1105,7 @@ input {
     text-align: center;
     max-width: 290px;
     line-height: 1.5;
-    margin: 0 0 -4px;
+    margin: 0;
   }
 
   #phase-input.touch-mash-mode .mash-surface-label.fade-out,
@@ -1166,6 +1114,7 @@ input {
     visibility: hidden;
   }
 
+  #phase-input.touch-mash-mode .mash-surface,
   #phase-input.touch-mash-mode .mash-input {
     display: none;
   }
