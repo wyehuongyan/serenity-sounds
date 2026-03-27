@@ -4,7 +4,7 @@ import * as THREE from 'https://esm.sh/three@0.160.0';
 
 const CUBE_SPACING = 3.5;
 const MINI_SCALE    = 0.055;
-const HOVER_RADIUS = 5.0;
+const HOVER_RADIUS = 3.35;
 const BRANCH_HOVER_RADIUS = 1.45;
 const BRANCH_KINTSUGI_COLOR = "#c9a35a";
 const LINE_SEGMENTS = 48; // Higher res for smooth braiding
@@ -13,7 +13,7 @@ const GRAPH_THREAD_SEGMENTS = 36;
 const GRAPH_THREAD_WIDTH = 0.048;
 const GRAPH_THREAD_AUDIO_WIDTH = 0.008;
 const GRAPH_THREAD_BASE_OPACITY = 0.085;
-const LINE_RADIUS   = 3.6;
+const LINE_RADIUS   = 3.2;
 const LINE_RELEASE_RADIUS = 4.0;
 const CURSOR_RELAXATION = 0.12;
 const RIBBON_TIP_RELAXATION = 0.26;
@@ -220,10 +220,14 @@ const BEGIN_CUBE_FRAG = /* glsl */`
     float stoneGrain = fbm(vPos.xyz * 5.0) * 0.08;
     vec3 vellum = vec3(0.94, 0.92, 0.88);
     vec3 porcelain = vec3(0.99, 0.985, 0.965);
-    vec3 inkColL = mix(vellum, porcelain, glow * 0.35) + stoneGrain * 0.55;
-    float kVein = smoothstep(0.61, 0.68, fbm(vPos.xyz * 8.0 + uTime * 0.04));
+    vec3 pearl = vec3(0.985, 0.965, 0.93);
+    vec3 inkColL = mix(vellum, porcelain, glow * 0.42) + stoneGrain * 0.55;
+    inkColL = mix(inkColL, pearl, pow(max(0.0, 1.0 - dist * 1.8), 2.2) * 0.3);
+    float kVein = smoothstep(0.58, 0.69, fbm(vPos.xyz * 8.6 + uTime * 0.04));
+    float kVeinFine = smoothstep(0.67, 0.74, fbm(vPos.xyz * 16.0 - uTime * 0.025));
     float kDust = pow(fbm(vPos.xyz * 13.0 + uTime * 0.03), 7.0) * 0.55;
-    inkColL += vec3(1.0, 0.86, 0.48) * (kVein * 1.1 + kDust * 0.45);
+    vec3 veinGold = vec3(1.0, 0.86, 0.48);
+    inkColL += veinGold * (kVein * 1.22 + kVeinFine * 0.34 + kDust * 0.45);
     
     vec3 coreCol = mix(coreColD, vec3(1.0, 0.975, 0.9) * glow * 0.55, uTheme);
     vec3 inkCol  = mix(inkColD,  inkColL,  uTheme);
@@ -239,11 +243,15 @@ const BEGIN_CUBE_FRAG = /* glsl */`
     float spec = pow(max(dot(vNormal, lightDir), 0.0), 90.0) * mix(1.5, 0.78, uTheme);
     float rim = pow(1.0 - max(dot(vNormal, vec3(0,0,1)), 0.0), 3.5) * mix(0.7, 0.4, uTheme);
     float innerHalo = pow(max(0.0, 1.0 - dist * 1.9), 3.0) * uTheme;
+    float pearlHalo = pow(max(0.0, 1.0 - dist * 1.55), 4.4) * uTheme;
+    float warmSheen = pow(max(dot(vNormal, normalize(vec3(-0.3, 0.95, 0.55))), 0.0), 6.0) * uTheme;
 
     vec3 finalCol = mix(inkCol, coreCol, glow * 0.8) * mix(1.0, diff, uTheme * 0.5);
     finalCol += vec3(1.0, 0.95, 0.8) * stars + spec;
     finalCol += rim * mix(vec3(0.4, 0.7, 1.0), vec3(0.9, 0.85, 0.75), uTheme);
     finalCol += vec3(1.0, 0.96, 0.88) * innerHalo * 0.22;
+    finalCol += vec3(1.0, 0.98, 0.93) * pearlHalo * 0.18;
+    finalCol += veinGold * warmSheen * 0.1;
 
     gl_FragColor = vec4(finalCol, uOpacity);
   }
@@ -277,6 +285,7 @@ const CUBE_FRAG = /* glsl */`
   uniform float uSeed;
   uniform float uTheme;
   uniform float uResonance;
+  uniform float uHover;
   varying vec3  vNormal;
   varying vec3  vPos;
   ${GLSL_NOISE}
@@ -297,6 +306,10 @@ const CUBE_FRAG = /* glsl */`
     vec3 crysL = vec3(0.7, 0.68, 0.65) * (1.0 + uAudio * 0.3);
     vec3 internalGlow = mix(rockCol, mix(gemCol, mix(crysD, crysL, uTheme), pow(1.0 - max(0.0, dot(N, V)), 2.8) + fracture), isGem);
     internalGlow *= mix(1.1, max(0.0, dot(N, L)) * 0.5 + 0.5, uTheme * 0.6);
+    float porcelainBloom = pow(max(0.0, dot(N, normalize(vec3(0.15, 0.95, 0.55)))), 2.4) * uTheme;
+    float subsurface = pow(1.0 - max(0.0, dot(N, V)), 1.9) * uTheme;
+    internalGlow += vec3(0.12, 0.095, 0.06) * porcelainBloom * 0.55;
+    internalGlow += vec3(0.22, 0.19, 0.14) * subsurface * 0.18;
     float glint1 = pow(max(0.0, dot(N, normalize(vec3(1.0, 1.0, 1.0)))), 128.0);
     float glint2 = pow(max(0.0, dot(N, normalize(vec3(-0.8, 0.4, 0.2)))), 96.0);
     vec3 reflection = (glint1 + glint2 * 0.5) * vec3(1.0, 0.98, 0.95) * (0.2 + step(0.45, fbm(vNormal.xy * 4.2 + uSeed)) * isGem * 0.8) * mix(1.0, 0.3, uTheme);
@@ -310,7 +323,17 @@ const CUBE_FRAG = /* glsl */`
     vec3 goldInk = vec3(1.0, 0.88, 0.55);
     vec3 finalGlow = mix(internalGlow, goldInk * (1.2 + uTheme * 0.3 + uResonance * 1.8), vein * mix(0.9, 0.85, uTheme)) + goldInk * uResonance * 0.08;
     vec3 skyRef = mix(vec3(0.06, 0.08, 0.12), vec3(0.85, 0.88, 0.92), uTheme);
-    gl_FragColor = vec4(mix(finalGlow, skyRef * 0.15, pow(1.0 - max(0.0, dot(N, V)), mix(6.5, 3.5, uTheme)) * mix(0.4, 0.2, uTheme)) + reflection, uOpacity);
+    float rimHalo = pow(1.0 - max(0.0, dot(N, V)), mix(4.6, 3.0, uTheme));
+    vec3 pearlRim = vec3(0.96, 0.93, 0.88) * rimHalo * uTheme * 0.16;
+    vec3 hoverTint = mix(vec3(0.28, 0.38, 0.56), vec3(0.96, 0.86, 0.58), uTheme);
+    vec3 hoverGlow = hoverTint * rimHalo * uHover * mix(0.22, 0.34, uTheme);
+    gl_FragColor = vec4(
+      mix(finalGlow, skyRef * 0.15, pow(1.0 - max(0.0, dot(N, V)), mix(6.5, 3.5, uTheme)) * mix(0.4, 0.2, uTheme))
+      + reflection
+      + pearlRim
+      + hoverGlow,
+      uOpacity
+    );
   }
 `;
 
@@ -523,6 +546,7 @@ function createCubeShaderMaterial(inkColor, opacity, seed = 0) {
       uOpacity:  { value: opacity },
       uTheme:    { value: 0 },
       uResonance: { value: 0 },
+      uHover:    { value: 0 },
     },
     vertexShader:   CUBE_VERT,
     fragmentShader: CUBE_FRAG,
@@ -996,6 +1020,7 @@ export class SceneManager {
 
     // ── Solo Focus Mode ──
     this.focusedStone     = null;   // reference to the focused cube entry
+    this.releasingStone   = null;
     this.focusBlend       = 0;     // 0→1 smooth transition into focus
     this.focusOriginWorld = new THREE.Vector3(); // stone's original world position
     this.rippleAge        = -1;    // age of paper ripple (-1 = inactive)
@@ -1063,6 +1088,7 @@ export class SceneManager {
   }
 
   _enterFocus(entry) {
+    this.releasingStone = null;
     this.focusedStone = entry;
     const wp = new THREE.Vector3();
     entry.mesh.getWorldPosition(wp);
@@ -1082,6 +1108,9 @@ export class SceneManager {
   }
 
   _exitFocus() {
+    if (this.focusedStone) {
+      this.releasingStone = this.focusedStone;
+    }
     this.focusedStone = null;
   }
 
@@ -1215,6 +1244,11 @@ export class SceneManager {
           clusterIndex: ci,
           appearAt: ci*0.36 + ki*0.055,
           driftOffset: seededVal(seed+40) * Math.PI * 2,
+          swimPhaseA: seededVal(seed + 50) * Math.PI * 2,
+          swimPhaseB: seededVal(seed + 60) * Math.PI * 2,
+          swimRadius: 0.42 + seededVal(seed + 70) * 0.82,
+          swimLift: 0.1 + seededVal(seed + 80) * 0.2,
+          swimSpeed: 0.07 + seededVal(seed + 90) * 0.06,
         });
         group.add(mesh);
       });
@@ -1352,7 +1386,15 @@ export class SceneManager {
     }
 
     const focusTarget = this.focusedStone ? 1.0 : 0.0;
-    this.focusBlend = THREE.MathUtils.lerp(this.focusBlend, focusTarget, 0.04);
+    this.focusBlend = THREE.MathUtils.lerp(
+      this.focusBlend,
+      focusTarget,
+      this.focusedStone ? 0.028 : 0.022,
+    );
+    if (!this.focusedStone && this.focusBlend < 0.015) {
+      this.releasingStone = null;
+    }
+    const focusEase = this.focusBlend * this.focusBlend * (3.0 - 2.0 * this.focusBlend);
 
     if (this.rippleAge >= 0) {
       this.rippleAge += 0.016;
@@ -1630,11 +1672,19 @@ export class SceneManager {
         }
 
         let target;
-        const isFocused = entry === this.focusedStone;
+        const isFocused = entry === this.focusedStone || entry === this.releasingStone;
         if (isFocused && this.focusBlend > 0.01) {
-          target = entry.baseScale * 2.5;
+          const restScale = THREE.MathUtils.lerp(MINI_SCALE, entry.baseScale, proximity * proximity * (3 - 2 * proximity));
+          target = THREE.MathUtils.lerp(restScale, entry.baseScale * 2.5, focusEase);
         } else if (this.focusBlend > 0.01 && !isFocused) {
-          target = MINI_SCALE * 0.25;
+          const playRest = this.isPlaying
+            ? THREE.MathUtils.lerp(MINI_SCALE, entry.baseScale, (clothWave(
+                (this.clusterRoot.children[entry.clusterIndex]?.position.x || 0) + entry.basePos.x,
+                (this.clusterRoot.children[entry.clusterIndex]?.position.y || 0) + entry.basePos.y,
+                elapsed,
+              ) + 1.14) / 2.28)
+            : THREE.MathUtils.lerp(MINI_SCALE, entry.baseScale, proximity * proximity * (3 - 2 * proximity));
+          target = THREE.MathUtils.lerp(playRest, MINI_SCALE * 0.25, focusEase);
         } else if (this.isPlaying) {
           const group = this.clusterRoot.children[entry.clusterIndex];
           const wx = (group ? group.position.x : 0) + entry.basePos.x;
@@ -1657,6 +1707,11 @@ export class SceneManager {
         entry.currentDisplayScale = THREE.MathUtils.lerp(entry.currentDisplayScale, target, 0.08);
       }
       mesh.scale.setScalar(Math.max(0.001, entry.currentDisplayScale));
+      mesh.material.uniforms.uHover.value = THREE.MathUtils.lerp(
+        mesh.material.uniforms.uHover.value,
+        Math.pow(entry.hoverProximity, 1.6) * 0.9,
+        0.12,
+      );
 
       const expand = THREE.MathUtils.clamp((entry.currentDisplayScale - 0.06)/(1.0 - 0.06), 0, 1);
       const amp = THREE.MathUtils.lerp(0.006, 0.07, expand);
@@ -1666,16 +1721,16 @@ export class SceneManager {
       let posY = entry.basePos.y + Math.sin(elapsed * orbitSpeed + entry.driftOffset) * orbitRadius;
       let posZ = entry.basePos.z + Math.cos(elapsed * orbitSpeed * 1.4 + entry.driftOffset) * amp * 0.3;
 
-      const isFocused = entry === this.focusedStone;
+      const isFocused = entry === this.focusedStone || entry === this.releasingStone;
       if (isFocused && this.focusBlend > 0.01) {
         const group = this.clusterRoot.children[entry.clusterIndex];
         const groupPos = group ? group.position : new THREE.Vector3();
         const targetLocal = new THREE.Vector3(-groupPos.x, -groupPos.y, 2);
-        posX = THREE.MathUtils.lerp(posX, targetLocal.x, this.focusBlend);
-        posY = THREE.MathUtils.lerp(posY, targetLocal.y, this.focusBlend);
-        posZ = THREE.MathUtils.lerp(posZ, targetLocal.z, this.focusBlend);
+        posX = THREE.MathUtils.lerp(posX, targetLocal.x, focusEase);
+        posY = THREE.MathUtils.lerp(posY, targetLocal.y, focusEase);
+        posZ = THREE.MathUtils.lerp(posZ, targetLocal.z, focusEase);
         mesh.rotation.y += 0.008;
-        mesh.rotation.x = Math.sin(elapsed * 0.3) * 0.15 * this.focusBlend;
+        mesh.rotation.x = Math.sin(elapsed * 0.3) * 0.15 * focusEase;
       }
       mesh.position.x = posX;
       mesh.position.y = posY;
@@ -1698,6 +1753,24 @@ export class SceneManager {
         const targetRotX = -slopeY * 0.08;
         mesh.rotation.z = THREE.MathUtils.lerp(mesh.rotation.z, targetRotZ, 0.05);
         mesh.rotation.x = THREE.MathUtils.lerp(mesh.rotation.x, targetRotX, 0.05);
+
+        const audioSwim = 0.42 + this.smoothAudio * 0.72;
+        const swimTime = elapsed * entry.swimSpeed + entry.swimPhaseA;
+        const swimTimeB = elapsed * (entry.swimSpeed * 0.76 + 0.03) + entry.swimPhaseB;
+        const swimRadius = entry.swimRadius * this.playbackBlend * audioSwim;
+        const swimLift = entry.swimLift * this.playbackBlend * (0.95 + this.smoothAudio * 0.85);
+        const swimDriftX = Math.sin(swimTime) * swimRadius + Math.sin(swimTimeB) * swimRadius * 0.6;
+        const swimDriftY = Math.cos(swimTime * 0.82) * swimRadius * 0.9 + Math.sin(swimTimeB * 1.12) * swimRadius * 0.34;
+        const swimDriftZ = Math.sin(swimTime * 0.54 + swimTimeB * 0.3) * swimLift;
+        mesh.position.x += swimDriftX;
+        mesh.position.y += swimDriftY;
+        mesh.position.z += swimDriftZ;
+
+        const driftRotY = swimDriftX * 0.24;
+        const driftRotX = swimDriftY * 0.16;
+        mesh.rotation.y += driftRotY * 0.05;
+        mesh.rotation.x = THREE.MathUtils.lerp(mesh.rotation.x, targetRotX + driftRotX, 0.04);
+        mesh.rotation.z = THREE.MathUtils.lerp(mesh.rotation.z, targetRotZ + swimDriftX * 0.05, 0.04);
       }
       mesh.rotation.y += (entry.rotSpeed || 0.001) + expand*0.006;
       if (!this.isPlaying && this.cursorActive && !this.focusedStone) {
