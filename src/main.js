@@ -1,5 +1,6 @@
 import { MIN_KEYPRESS_COUNT } from "./config.js";
 import { KeyboardCapture } from "./input/KeyboardCapture.js";
+import { TouchMashCapture } from "./input/TouchMashCapture.js";
 import { analyzeInput } from "./input/InputAnalyzer.js";
 import { mapToMoodParameters } from "./analysis/MoodMapper.js";
 import { SceneManager } from "./visual/SceneManager.js";
@@ -153,11 +154,21 @@ function animateCursor() {
 
   // Stone hover label — only show if no overlay is blocking the garden
   if (stoneLabelEl) {
-    const stoneLabel = (!isOverlayVisible && sceneManager?.beginCubeHovered)
+    const hoveredStoneLabel = (!isOverlayVisible && sceneManager?.beginCubeHovered)
       ? "Begin"
       : (!isOverlayVisible ? sceneManager?.hoveredStoneLabel : null);
-    if (stoneLabel) {
-      stoneLabelEl.textContent = stoneLabel;
+    const mashCursorHint = !touchMashMode &&
+      desktopMashCursorHintVisible &&
+      !isOverlayVisible &&
+      !hoveredStoneLabel
+      ? "start mashing - droplets catch the letters"
+      : null;
+    const labelText = hoveredStoneLabel || mashCursorHint;
+
+    stoneLabelEl.classList.toggle("is-hint", !!mashCursorHint && !hoveredStoneLabel);
+
+    if (labelText) {
+      stoneLabelEl.textContent = labelText;
       stoneLabelEl.style.left = `${dotX}px`;
       stoneLabelEl.style.top  = `${dotY}px`;
       stoneLabelEl.classList.add("is-visible");
@@ -235,11 +246,12 @@ const signupLink = document.querySelector("#signup-link");
 const phaseInput = document.querySelector("#phase-input");
 const mashInput = document.querySelector("#mash-input");
 const mashProgressFill = document.querySelector("#mash-progress-fill");
+const mashSurface = document.querySelector("#mash-surface");
+const mashSurfaceLabel = document.querySelector(".mash-surface-label");
 const uploadBtn = document.querySelector("#upload-btn");
 const imageUploadInput = document.querySelector("#image-upload");
 const uploadPalette = document.querySelector("#upload-palette");
 const uploadPaletteSwatches = document.querySelector("#upload-palette-swatches");
-const inputHint = document.querySelector("#input-hint");
 const generateBtn = document.querySelector("#generate-btn");
 const keystrokeCount = document.querySelector("#keystroke-count");
 
@@ -351,8 +363,7 @@ const signupSubmit = document.querySelector("#signup-submit");
 
 // ─── Core systems ───
 
-// (Moved up)
-animateCursor(); 
+const touchMashMode = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
 
 const keyboardCapture = new KeyboardCapture({
   input: mashInput,
@@ -374,6 +385,32 @@ const keyboardCapture = new KeyboardCapture({
   },
 });
 
+const touchMashCapture = new TouchMashCapture({
+  target: phaseInput,
+  onUpdate: handleKeystrokeUpdate,
+  shouldCapture: (event) => {
+    if (!touchMashMode) {
+      return false;
+    }
+
+    if (!phaseInput || phaseInput.classList.contains("hidden")) {
+      return false;
+    }
+
+    if (isOverlayVisible) {
+      return false;
+    }
+
+    if (event.target instanceof HTMLElement && event.target.closest("#upload-btn, #generate-btn, #image-upload")) {
+      return false;
+    }
+
+    return true;
+  },
+});
+
+const activeMashCapture = touchMashMode ? touchMashCapture : keyboardCapture;
+
 // ─── State ───
 
 let currentAnalysis = null;
@@ -383,6 +420,18 @@ let hintDismissed = false;
 let generateAllowed = false;
 let uploadedImagePalette = [];
 let uploadedImageUrl = null;
+let desktopMashCursorHintVisible = false;
+
+if (touchMashMode) {
+  phaseInput?.classList.add("touch-mash-mode");
+  if (mashSurfaceLabel) {
+    mashSurfaceLabel.textContent = "drum the surface — droplets catch the gesture";
+  }
+} else {
+  phaseInput?.classList.add("desktop-mash-mode");
+}
+
+animateCursor();
 
 // ─── Keystroke feedback ───
 
@@ -541,6 +590,10 @@ function applyUploadedPaletteInfluence(moodParameters) {
 }
 
 function focusMashInput() {
+  if (touchMashMode) {
+    return;
+  }
+
   if (!mashInput || !phaseInput || phaseInput.classList.contains("hidden")) {
     return;
   }
@@ -584,8 +637,10 @@ function handleKeystrokeUpdate(count) {
   // Fade out hint after first keypress
   if (count === 1 && !hintDismissed) {
     hintDismissed = true;
-    inputHint.classList.add("fade-out");
-    setTimeout(() => inputHint.classList.add("hidden"), 600);
+    if (touchMashMode && mashSurfaceLabel) {
+      mashSurfaceLabel.classList.add("fade-out");
+      setTimeout(() => mashSurfaceLabel.classList.add("hidden"), 600);
+    }
   }
 
   // Reveal generate button at threshold
@@ -654,6 +709,7 @@ sceneManager.initBeginCube(() => {
     fadeIn(phaseInput);
     fadeIn(historyToggle, 200);
     fadeIn(themeToggle, 200); // Show theme toggle here
+    desktopMashCursorHintVisible = !touchMashMode;
     focusMashInput();
   });
 });
@@ -701,6 +757,10 @@ phaseInput.addEventListener("pointerdown", (event) => {
     return;
   }
 
+  if (touchMashMode) {
+    return;
+  }
+
   focusMashInput();
 });
 
@@ -735,8 +795,9 @@ generateBtn.addEventListener("click", (event) => {
 });
 
 async function generateComposition() {
-  const snapshot = keyboardCapture.getSnapshot();
+  const snapshot = activeMashCapture.getSnapshot();
   if (snapshot.keyCount < MIN_KEYPRESS_COUNT) return;
+  desktopMashCursorHintVisible = false;
 
   // Fade and lock input immediately while the scene builds.
   phaseInput.style.pointerEvents = "none";
@@ -799,8 +860,9 @@ function resetExperience() {
   currentMoodParameters = null;
   hintDismissed = false;
   generateAllowed = false;
+  desktopMashCursorHintVisible = !touchMashMode;
 
-  keyboardCapture.reset();
+  activeMashCapture.reset();
 
   if (uploadedImageUrl) {
     URL.revokeObjectURL(uploadedImageUrl);
@@ -813,7 +875,7 @@ function resetExperience() {
   renderUploadPalette([]);
 
   generateBtn.classList.remove("is-visible");
-  inputHint.classList.remove("hidden", "fade-out");
+  mashSurfaceLabel?.classList.remove("hidden", "fade-out");
   updateMashProgress(0);
 
   progressFill.style.width = "0%";
