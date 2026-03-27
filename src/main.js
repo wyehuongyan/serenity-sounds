@@ -58,6 +58,40 @@ let lastBeginHover = false;
 let lastBeginHoverAt = 0;
 let mashDripStopTimeoutId = null;
 let mashDripActive = false;
+let uiAudioPrimed = false;
+
+async function ensureAudioPrimed() {
+  if (uiAudioPrimed) return;
+  uiAudioPrimed = true;
+
+  try {
+    await musicGenerator.resume();
+  } catch (_) {
+    // Non-fatal; UI sounds can still be attempted below.
+  }
+
+  const audioEls = [beginHoverSound, beginPressSound, mashDripSound];
+  await Promise.all(audioEls.map(async (audio) => {
+    const previousMuted = audio.muted;
+    const previousVolume = audio.volume;
+    try {
+      audio.muted = true;
+      audio.volume = 0;
+      audio.currentTime = 0;
+      const playPromise = audio.play();
+      if (playPromise?.then) {
+        await playPromise;
+      }
+    } catch (_) {
+      // Ignore per-sound priming failures.
+    } finally {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = !soundEnabled || previousMuted;
+      audio.volume = Number(audio.dataset.baseVolume || previousVolume || 1);
+    }
+  }));
+}
 
 function onMouseMove(e) {
   const x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -92,6 +126,7 @@ document.addEventListener("mousemove", (event) => {
 
 // Click state — burst animation, then reset
 document.addEventListener("mousedown", () => {
+  ensureAudioPrimed();
   // Force-restart animation by removing, reflowing, re-adding
   cursorDot.classList.remove("is-clicking");
   cursorRing.classList.remove("is-clicking");
@@ -306,6 +341,7 @@ const timeTotal = document.querySelector("#timestamp-total");
 const resetBtn = document.querySelector("#reset-btn");
 const historyToggle = document.querySelector("#history-toggle");
 const historyDrawer = document.querySelector("#history-drawer");
+const historyClear = document.querySelector("#history-clear");
 const historyClose = document.querySelector("#history-close");
 const historyList = document.querySelector("#history-list");
 const signupModal = document.querySelector("#signup-modal");
@@ -528,6 +564,7 @@ function handleKeystrokeUpdate(count) {
   updateMashProgress(count);
 
   if (count > 0) {
+    ensureAudioPrimed();
     touchMashDripSound();
     // Trigger ink splatter with a small cooldown
     const now = Date.now();
@@ -799,15 +836,23 @@ function resetExperience() {
 
 // ─── History ───
 
+function getHistorySessions() {
+  return JSON.parse(localStorage.getItem("serenity-history") || "[]");
+}
+
+function setHistorySessions(sessions) {
+  localStorage.setItem("serenity-history", JSON.stringify(sessions.slice(0, 20)));
+}
+
 function saveToHistory(moodParameters, analysis) {
-  const sessions = JSON.parse(localStorage.getItem("serenity-history") || "[]");
+  const sessions = getHistorySessions();
   sessions.unshift({
     timestamp: Date.now(),
     colorPalette: moodParameters.colorPalette,
     moodParameters,
     analysis,
   });
-  localStorage.setItem("serenity-history", JSON.stringify(sessions.slice(0, 20)));
+  setHistorySessions(sessions);
 }
 
 function timeAgo(timestamp) {
@@ -823,7 +868,7 @@ function timeAgo(timestamp) {
 }
 
 function renderHistoryList() {
-  const sessions = JSON.parse(localStorage.getItem("serenity-history") || "[]");
+  const sessions = getHistorySessions();
   historyList.innerHTML = "";
 
   if (!sessions.length) {
@@ -838,6 +883,9 @@ function renderHistoryList() {
     const row = document.createElement("div");
     row.className = "history-row";
 
+    const main = document.createElement("div");
+    main.className = "history-main";
+
     const swatches = document.createElement("div");
     swatches.className = "history-swatches";
     (session.colorPalette || []).forEach((color) => {
@@ -851,8 +899,20 @@ function renderHistoryList() {
     ts.className = "history-timestamp";
     ts.textContent = timeAgo(session.timestamp);
 
-    row.appendChild(swatches);
-    row.appendChild(ts);
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "history-delete";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const nextSessions = getHistorySessions().filter((candidate) => candidate.timestamp !== session.timestamp);
+      setHistorySessions(nextSessions);
+      renderHistoryList();
+    });
+
+    main.appendChild(swatches);
+    main.appendChild(ts);
+    row.appendChild(main);
+    row.appendChild(deleteBtn);
 
     row.addEventListener("click", () => {
       closeHistoryDrawer();
@@ -914,6 +974,10 @@ function closeHistoryDrawer() {
 }
 
 historyToggle.addEventListener("click", openHistoryDrawer);
+historyClear?.addEventListener("click", () => {
+  localStorage.removeItem("serenity-history");
+  renderHistoryList();
+});
 historyClose.addEventListener("click", closeHistoryDrawer);
 
 // ─── Tick loop ───

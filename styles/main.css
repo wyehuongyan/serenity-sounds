@@ -842,6 +842,12 @@ input {
   margin-bottom: 32px;
 }
 
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .history-title {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
@@ -868,6 +874,26 @@ input {
   opacity: 1;
 }
 
+.history-clear,
+.history-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0.52;
+  transition: opacity 220ms ease, color 220ms ease;
+}
+
+.history-clear:hover,
+.history-delete:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+
 .history-list {
   display: flex;
   flex-direction: column;
@@ -886,6 +912,7 @@ input {
 .history-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
   cursor: pointer;
   padding: 16px 0;
@@ -903,6 +930,13 @@ input {
   display: flex;
   gap: 3px;
   flex-shrink: 0;
+}
+
+.history-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
 }
 
 .history-swatch {
