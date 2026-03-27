@@ -108,6 +108,37 @@ function onMouseMove(e) {
   }
 }
 
+function isTouchPointerEvent(event) {
+  return event.pointerType === "touch" || event.pointerType === "pen";
+}
+
+function syncVisualPointer(clientX, clientY, eventTarget = null) {
+  dotX = clientX;
+  dotY = clientY;
+
+  if (cursorDot && cursorRing) {
+    cursorDot.style.left = `${dotX}px`;
+    cursorDot.style.top = `${dotY}px`;
+  }
+
+  const x = (clientX / window.innerWidth) * 2 - 1;
+  const y = -(clientY / window.innerHeight) * 2 + 1;
+
+  if (!isOverlayVisible) {
+    sceneManager.updateCursor(x, y);
+  }
+
+  if (coordsDisplay) {
+    coordsDisplay.textContent = `${x.toFixed(2)}, ${y.toFixed(2)}`;
+  }
+
+  if (eventTarget && cursorDot && cursorRing) {
+    const overInteractive = eventTarget.closest("button, input, a, [role='button']");
+    cursorDot.classList.toggle("is-hovering", !!overInteractive);
+    cursorRing.classList.toggle("is-hovering", !!overInteractive);
+  }
+}
+
 let ringX = window.innerWidth / 2;
 let ringY = window.innerHeight / 2;
 let dotX = ringX;
@@ -123,6 +154,22 @@ document.addEventListener("mousemove", (event) => {
   const overInteractive = event.target.closest("button, input, a, [role='button']");
   cursorDot.classList.toggle("is-hovering", !!overInteractive);
   cursorRing.classList.toggle("is-hovering", !!overInteractive);
+});
+
+document.addEventListener("pointerdown", (event) => {
+  if (!isTouchPointerEvent(event)) {
+    return;
+  }
+
+  syncVisualPointer(event.clientX, event.clientY, event.target instanceof Element ? event.target : null);
+});
+
+document.addEventListener("pointermove", (event) => {
+  if (!isTouchPointerEvent(event)) {
+    return;
+  }
+
+  syncVisualPointer(event.clientX, event.clientY, event.target instanceof Element ? event.target : null);
 });
 
 // Click state — burst animation, then reset
@@ -154,26 +201,30 @@ function animateCursor() {
 
   // Stone hover label — only show if no overlay is blocking the garden
   if (stoneLabelEl) {
-    const hoveredStoneLabel = (!isOverlayVisible && sceneManager?.beginCubeHovered)
-      ? "Begin"
-      : (!isOverlayVisible ? sceneManager?.hoveredStoneLabel : null);
-    const mashCursorHint = !touchMashMode &&
-      desktopMashCursorHintVisible &&
-      !isOverlayVisible &&
-      !hoveredStoneLabel
-      ? "start mashing - droplets catch the letters"
-      : null;
-    const labelText = hoveredStoneLabel || mashCursorHint;
-
-    stoneLabelEl.classList.toggle("is-hint", !!mashCursorHint && !hoveredStoneLabel);
-
-    if (labelText) {
-      stoneLabelEl.textContent = labelText;
-      stoneLabelEl.style.left = `${dotX}px`;
-      stoneLabelEl.style.top  = `${dotY}px`;
-      stoneLabelEl.classList.add("is-visible");
+    if (touchMashMode) {
+      stoneLabelEl.classList.remove("is-visible", "is-hint");
     } else {
-      stoneLabelEl.classList.remove("is-visible");
+      const hoveredStoneLabel = (!isOverlayVisible && sceneManager?.beginCubeHovered)
+        ? "Begin"
+        : (!isOverlayVisible ? sceneManager?.hoveredStoneLabel : null);
+      const mashCursorHint = !touchMashMode &&
+        desktopMashCursorHintVisible &&
+        !isOverlayVisible &&
+        !hoveredStoneLabel
+        ? "start mashing - droplets catch the letters"
+        : null;
+      const labelText = hoveredStoneLabel || mashCursorHint;
+
+      stoneLabelEl.classList.toggle("is-hint", !!mashCursorHint && !hoveredStoneLabel);
+
+      if (labelText) {
+        stoneLabelEl.textContent = labelText;
+        stoneLabelEl.style.left = `${dotX}px`;
+        stoneLabelEl.style.top  = `${dotY}px`;
+        stoneLabelEl.classList.add("is-visible");
+      } else {
+        stoneLabelEl.classList.remove("is-visible");
+      }
     }
   }
 
@@ -627,7 +678,8 @@ function handleKeystrokeUpdate(count) {
       
       // Kintsugi Gold vs Sumi Ink variety
       const isGold = Math.random() > 0.80; // 20% chance of gold
-      const inkColor = isGold ? "#f2d173" : "#000000"; // Black is default, gold for pulse
+      const darkInkColor = currentTheme === "dark" ? "#2f2721" : "#000000";
+      const inkColor = isGold ? "#f2d173" : darkInkColor;
       
       sceneManager.addSplatter(wx, wy, inkColor, isGold);
       lastSplatterTime = now;

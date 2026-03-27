@@ -470,6 +470,10 @@ input {
   display: none;
 }
 
+.mash-surface-label {
+  display: none;
+}
+
 .mash-line {
   position: absolute;
   inset: 0 auto 0 0;
@@ -1142,15 +1146,18 @@ input {
   }
 
   #phase-input.touch-mash-mode .mash-surface-label {
-    position: relative;
-    z-index: 1;
+    display: block;
     font-family: "IBM Plex Mono", monospace;
-    font-size: 0.72rem;
+    font-size: 0.64rem;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: rgba(var(--accent-rgb), 0.68);
-    opacity: 0.9;
+    color: rgba(var(--accent-rgb), 0.5);
+    opacity: 0.86;
     transition: opacity 600ms ease, visibility 600ms;
+    text-align: center;
+    max-width: 290px;
+    line-height: 1.5;
+    margin: 0 0 -4px;
   }
 
   #phase-input.touch-mash-mode .mash-surface-label.fade-out,
@@ -1179,12 +1186,20 @@ input {
   }
 
   .signup-link {
-    bottom: 20px;
-    right: 20px;
+    top: 36px;
+    right: 24px;
+    bottom: auto;
   }
 
   .history-drawer {
     width: 260px;
+  }
+
+  .cursor-dot,
+  .cursor-ring,
+  .stone-label,
+  .cursor-coords {
+    display: none !important;
   }
 }
 
