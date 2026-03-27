@@ -1457,7 +1457,7 @@ export class SceneManager {
         this.beginCube.rotation.x += Math.sin(elapsed * 0.31) * 0.008 + Math.cos(elapsed * 0.17) * 0.005;
         this.beginCube.rotation.y += Math.sin(elapsed * 0.19) * 0.009 + Math.cos(elapsed * 0.27) * 0.006;
         this.beginCube.rotation.z += Math.cos(elapsed * 0.23) * 0.006 + Math.sin(elapsed * 0.11) * 0.004;
-        this.beginCube.position.x = Math.sin(elapsed * 0.22) * 0.14 + Math.cos(elapsed * 0.13) * 0.09;
+        this.beginCube.position.x = 0;
         this.beginCube.position.y = Math.cos(elapsed * 0.18) * 0.11 + Math.sin(elapsed * 0.29) * 0.07;
       } else {
         this.beginCubeDisp = THREE.MathUtils.lerp(this.beginCubeDisp, 1.6, 0.07);

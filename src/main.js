@@ -689,10 +689,6 @@ function handleKeystrokeUpdate(count) {
   // Fade out hint after first keypress
   if (count === 1 && !hintDismissed) {
     hintDismissed = true;
-    if (touchMashMode && mashSurfaceLabel) {
-      mashSurfaceLabel.classList.add("fade-out");
-      setTimeout(() => mashSurfaceLabel.classList.add("hidden"), 600);
-    }
   }
 
   // Reveal generate button at threshold
