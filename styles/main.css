@@ -1349,7 +1349,62 @@ input {
   }
 
   .history-drawer {
-    width: 260px;
+    width: min(88vw, 340px);
+    padding: 56px 18px 24px;
+  }
+
+  .history-header {
+    margin-bottom: 22px;
+    gap: 12px;
+  }
+
+  .history-actions {
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .history-title {
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+  }
+
+  .history-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 0;
+  }
+
+  .history-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .history-swatches {
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .history-swatch {
+    width: 10px;
+    height: 10px;
+  }
+
+  .history-timestamp {
+    font-size: 0.66rem;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .history-delete {
+    font-size: 0.58rem;
+    white-space: nowrap;
+    justify-self: end;
   }
 
   .focus-reading {
