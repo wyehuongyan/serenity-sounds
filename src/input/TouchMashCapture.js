@@ -11,10 +11,11 @@ function isTouchPointer(event) {
 }
 
 export class TouchMashCapture {
-  constructor({ target, onUpdate, shouldCapture = null }) {
+  constructor({ target, onUpdate, shouldCapture = null, onTouchDown = null }) {
     this.target = target;
     this.onUpdate = onUpdate || (() => {});
     this.shouldCapture = shouldCapture;
+    this.onTouchDown = onTouchDown;
     this.activePointers = new Map();
     this.reset();
 
@@ -94,6 +95,7 @@ export class TouchMashCapture {
       y: event.clientY,
       timestamp: performance.now(),
     });
+    this.onTouchDown?.(event);
     this.recordSample(event, "down");
   }
 
