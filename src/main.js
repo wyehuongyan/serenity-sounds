@@ -957,7 +957,7 @@ function handleKeystrokeUpdate(count) {
       
       // Kintsugi Gold vs Sumi Ink variety
       const isGold = Math.random() > 0.80; // 20% chance of gold
-      const darkInkColor = currentTheme === "dark" ? "#2f2721" : "#000000";
+      const darkInkColor = currentTheme === "dark" ? "#8d7647" : "#000000";
       const inkColor = isGold ? "#f2d173" : darkInkColor;
       
       sceneManager.addSplatter(wx, wy, inkColor, isGold);
