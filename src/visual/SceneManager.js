@@ -63,6 +63,9 @@ const FILAMENT_IDLE_HOLD_TIME = 4.2;
 const FILAMENT_LINGER_SWAY = 0.2;
 const FILAMENT_COOLDOWN_TIME = 0.18;
 const FILAMENT_SURFACE_ARC = 1.55;
+const MOBILE_TRAIL_GEOMETRY_INTERVAL = 1 / 36;
+const MOBILE_BRANCH_GEOMETRY_INTERVAL = 1 / 32;
+const MOBILE_GRAPH_GEOMETRY_INTERVAL = 1 / 24;
 
 // ─── Shared Shaders ─────────────────────────────────────────────────────────
 
@@ -1475,6 +1478,10 @@ export class SceneManager {
 
     this.themeTarget = 0.0;
     this.themeBlend  = 0.0;
+    this.isMobileRuntime = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+    this._trailGeometryTimer = 0;
+    this._branchGeometryTimer = 0;
+    this._graphGeometryTimer = 0;
 
     this.animate();
   }
@@ -1586,6 +1593,9 @@ export class SceneManager {
       s.mesh.material.dispose();
     });
     this.splatters = [];
+    this._trailGeometryTimer = 0;
+    this._branchGeometryTimer = 0;
+    this._graphGeometryTimer = 0;
   }
 
   destroy() {
@@ -1909,6 +1919,12 @@ export class SceneManager {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const buildTime = elapsed - this.buildStartAt;
     const wp = new THREE.Vector3();
+    const shouldUpdateTrailGeometry = !this.isMobileRuntime || ((this._trailGeometryTimer += dt) >= MOBILE_TRAIL_GEOMETRY_INTERVAL);
+    const shouldUpdateBranchGeometry = !this.isMobileRuntime || ((this._branchGeometryTimer += dt) >= MOBILE_BRANCH_GEOMETRY_INTERVAL);
+    const shouldUpdateGraphGeometry = !this.isMobileRuntime || ((this._graphGeometryTimer += dt) >= MOBILE_GRAPH_GEOMETRY_INTERVAL);
+    if (shouldUpdateTrailGeometry) this._trailGeometryTimer = 0;
+    if (shouldUpdateBranchGeometry) this._branchGeometryTimer = 0;
+    if (shouldUpdateGraphGeometry) this._graphGeometryTimer = 0;
 
     this.paperPlane.material.uniforms.uTheme.value = this.themeBlend;
     this.cubes.forEach(c => {
@@ -2186,47 +2202,50 @@ export class SceneManager {
       }
 
       const renderHistory = trail.history.filter(sample => sample.age <= STROKE_RENDER_LIFETIME);
-      let pathBase = buildStrokePathSamples(renderHistory, trail.headWorld, CURSOR_TRAIL_SEGMENTS);
+      let pathBase = trail.pathPoints;
+      if (shouldUpdateTrailGeometry || trail.pathPoints.length < 2) {
+        pathBase = buildStrokePathSamples(renderHistory, trail.headWorld, CURSOR_TRAIL_SEGMENTS);
 
-      if (pathBase.length >= 2 && trail.idleLife > 0.04) {
-        let caressDist = Infinity;
-        const caressStone = new THREE.Vector3();
-        this.cubes.forEach(cube => {
-          cube.mesh.getWorldPosition(wp);
-          const d = wp.distanceTo(trail.headWorld);
-          if (d < STONE_CARESS_RADIUS * 1.15 && d < caressDist) {
-            caressDist = d;
-            caressStone.copy(wp);
-          }
-        });
-
-        pathBase = pathBase.map((point, index, arr) => {
-          const t = index / Math.max(arr.length - 1, 1);
-          const headEnvelope = Math.pow(t, 1.9) * trail.idleLife;
-          const moved = point.clone().add(new THREE.Vector3(
-            Math.sin(elapsed * 0.21 + t * 4.2) * IDLE_TRAIL_SWAY * headEnvelope,
-            Math.cos(elapsed * 0.18 + t * 3.6 + 0.4) * IDLE_TRAIL_SWAY * 0.8 * headEnvelope,
-            Math.sin(elapsed * 0.12 + t * 2.8) * IDLE_HEAD_WAVE_LIFT * 0.7 * headEnvelope,
-          ));
-
-          if (caressDist < Infinity) {
-            const toStone = caressStone.clone().sub(moved);
-            const dist = toStone.length();
-            const influence = headEnvelope * (1.0 - THREE.MathUtils.clamp(dist / (STONE_CARESS_RADIUS * 0.95), 0, 1));
-            if (influence > 0.001 && dist > 1e-5) {
-              const inward = toStone.multiplyScalar(1 / dist);
-              const tangent = new THREE.Vector3(-inward.y, inward.x, 0).normalize();
-              const swirl = Math.sin(elapsed * 0.34 + t * 5.1 + caressStone.x * 0.3 + caressStone.y * 0.2);
-              moved.addScaledVector(inward, STONE_CARESS_PULL * 0.7 * influence);
-              moved.addScaledVector(tangent, STONE_CARESS_SWIRL * 0.55 * swirl * influence);
+        if (pathBase.length >= 2 && trail.idleLife > 0.04) {
+          let caressDist = Infinity;
+          const caressStone = new THREE.Vector3();
+          this.cubes.forEach(cube => {
+            cube.mesh.getWorldPosition(wp);
+            const d = wp.distanceTo(trail.headWorld);
+            if (d < STONE_CARESS_RADIUS * 1.15 && d < caressDist) {
+              caressDist = d;
+              caressStone.copy(wp);
             }
-          }
+          });
 
-          return moved;
-        });
+          pathBase = pathBase.map((point, index, arr) => {
+            const t = index / Math.max(arr.length - 1, 1);
+            const headEnvelope = Math.pow(t, 1.9) * trail.idleLife;
+            const moved = point.clone().add(new THREE.Vector3(
+              Math.sin(elapsed * 0.21 + t * 4.2) * IDLE_TRAIL_SWAY * headEnvelope,
+              Math.cos(elapsed * 0.18 + t * 3.6 + 0.4) * IDLE_TRAIL_SWAY * 0.8 * headEnvelope,
+              Math.sin(elapsed * 0.12 + t * 2.8) * IDLE_HEAD_WAVE_LIFT * 0.7 * headEnvelope,
+            ));
+
+            if (caressDist < Infinity) {
+              const toStone = caressStone.clone().sub(moved);
+              const dist = toStone.length();
+              const influence = headEnvelope * (1.0 - THREE.MathUtils.clamp(dist / (STONE_CARESS_RADIUS * 0.95), 0, 1));
+              if (influence > 0.001 && dist > 1e-5) {
+                const inward = toStone.multiplyScalar(1 / dist);
+                const tangent = new THREE.Vector3(-inward.y, inward.x, 0).normalize();
+                const swirl = Math.sin(elapsed * 0.34 + t * 5.1 + caressStone.x * 0.3 + caressStone.y * 0.2);
+                moved.addScaledVector(inward, STONE_CARESS_PULL * 0.7 * influence);
+                moved.addScaledVector(tangent, STONE_CARESS_SWIRL * 0.55 * swirl * influence);
+              }
+            }
+
+            return moved;
+          });
+        }
+
+        trail.pathPoints = pathBase;
       }
-
-      trail.pathPoints = pathBase;
 
       const recentSamples = renderHistory.slice(-8);
       const motionTarget = recentSamples.length
@@ -2257,19 +2276,21 @@ export class SceneManager {
 
         if (!r.mesh.visible || !hasRenderablePath) return;
 
-        const drift = idx - (trail.ribbons.length - 1) * 0.5;
-        const offsetAmp = 0.014 + trail.motion * 0.01;
-        const points = pathBase.map((point, pointIndex, arr) => {
-          const t = pointIndex / Math.max(arr.length - 1, 1);
-          const envelope = Math.pow(Math.sin(t * Math.PI), 1.1);
-          return new THREE.Vector3(
-            point.x + Math.sin(elapsed * 0.18 + idx * 0.7 + t * 3.2) * offsetAmp * drift * envelope,
-            point.y + Math.cos(elapsed * 0.15 + idx * 0.7 + t * 2.8) * offsetAmp * drift * envelope,
-            point.z + drift * 0.003,
-          );
-        });
+        if (shouldUpdateTrailGeometry) {
+          const drift = idx - (trail.ribbons.length - 1) * 0.5;
+          const offsetAmp = 0.014 + trail.motion * 0.01;
+          const points = pathBase.map((point, pointIndex, arr) => {
+            const t = pointIndex / Math.max(arr.length - 1, 1);
+            const envelope = Math.pow(Math.sin(t * Math.PI), 1.1);
+            return new THREE.Vector3(
+              point.x + Math.sin(elapsed * 0.18 + idx * 0.7 + t * 3.2) * offsetAmp * drift * envelope,
+              point.y + Math.cos(elapsed * 0.15 + idx * 0.7 + t * 2.8) * offsetAmp * drift * envelope,
+              point.z + drift * 0.003,
+            );
+          });
 
-        updateRibbon(r.geo, points, trailWidth * (0.96 + idx * 0.1));
+          updateRibbon(r.geo, points, trailWidth * (0.96 + idx * 0.1));
+        }
       });
     }
 
@@ -2689,6 +2710,8 @@ export class SceneManager {
             0.08,
           );
 
+          if (!shouldUpdateBranchGeometry) return;
+
           const branchPath = computeWobblyPath(
             branchFrom,
             bundle.tipWorld,
@@ -2765,7 +2788,7 @@ export class SceneManager {
     uvCursor.set((cp.x + 50) / 100, (cp.y + 50) / 100);
     this.paperPlane.material.uniforms.uCursorPos.value.copy(uvCursor);
 
-    this.updateGraphRibbons(elapsed);
+    this.updateGraphRibbons(elapsed, shouldUpdateGraphGeometry);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -2819,7 +2842,7 @@ export class SceneManager {
     });
   }
 
-  updateGraphRibbons(elapsed) {
+  updateGraphRibbons(elapsed, shouldUpdateGeometry = true) {
     this.graphRibbons.forEach(bundle => {
       const { from, to, ribbons } = bundle;
       const p1 = from.mesh.getWorldPosition(new THREE.Vector3());
@@ -2846,8 +2869,10 @@ export class SceneManager {
           r.mat.uniforms.uPlayback.value = this.playbackBlend;
           r.mat.uniforms.uAudio.value = this.smoothAudio;
 
-          const pts = computeSilkThreadPath(p1, p2, elapsed, GRAPH_THREAD_SEGMENTS, r.seed + idx * 0.17);
-          updateRibbon(r.geo, pts, width);
+          if (shouldUpdateGeometry) {
+            const pts = computeSilkThreadPath(p1, p2, elapsed, GRAPH_THREAD_SEGMENTS, r.seed + idx * 0.17);
+            updateRibbon(r.geo, pts, width);
+          }
         }
       });
     });
