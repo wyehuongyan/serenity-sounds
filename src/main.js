@@ -455,6 +455,26 @@ const modalClose = document.querySelector("#modal-close");
 const signupEmail = document.querySelector("#signup-email");
 const signupSubmit = document.querySelector("#signup-submit");
 
+// ─── State ───
+
+let currentAnalysis = null;
+let currentMoodParameters = null;
+let buildReadyTimeoutId = null;
+let hintDismissed = false;
+let generateAllowed = false;
+let uploadedImagePalette = [];
+let uploadedImageUrl = null;
+let desktopMashCursorHintVisible = false;
+let focusReadingMap = new Map();
+let lastMashCount = 0;
+let thresholdHapticFired = false;
+let lastPlaybackHapticStep = -1;
+const PHASE_TRANSITION_MS = 920;
+const PHASE_OVERLAP_MS = 140;
+let cursorAnimationFrameId = null;
+let tickAnimationFrameId = null;
+let appDestroyed = false;
+
 // ─── Core systems ───
 
 const touchMashMode = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
@@ -504,26 +524,6 @@ const touchMashCapture = new TouchMashCapture({
 });
 
 const activeMashCapture = touchMashMode ? touchMashCapture : keyboardCapture;
-
-// ─── State ───
-
-let currentAnalysis = null;
-let currentMoodParameters = null;
-let buildReadyTimeoutId = null;
-let hintDismissed = false;
-let generateAllowed = false;
-let uploadedImagePalette = [];
-let uploadedImageUrl = null;
-let desktopMashCursorHintVisible = false;
-let focusReadingMap = new Map();
-let lastMashCount = 0;
-let thresholdHapticFired = false;
-let lastPlaybackHapticStep = -1;
-const PHASE_TRANSITION_MS = 920;
-const PHASE_OVERLAP_MS = 140;
-let cursorAnimationFrameId = null;
-let tickAnimationFrameId = null;
-let appDestroyed = false;
 
 if (touchMashMode) {
   phaseInput?.classList.add("touch-mash-mode");
@@ -1099,7 +1099,7 @@ function showTapToBegin() {
   };
 
   window.addEventListener("click", onFirstTap);
-  window.addEventListener("touchstart", onFirstTap);
+  window.addEventListener("touchstart", onFirstTap, { passive: false });
 }
 
 // ─── Landing → Input ───
