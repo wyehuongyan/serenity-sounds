@@ -432,9 +432,19 @@ const CUBE_FRAG = /* glsl */`
     float speckleThresh = mix(0.55, 0.65, uTheme);
     float speckles = smoothstep(speckleThresh, speckleThresh + 0.04, fbm(vPos.xyz * 7.0 + uSeed * 3.0 + uTime * 0.3));
     vein = max(vein, speckles * (1.2 + uResonance * 4.0));
+    float accentThresh = mix(0.46, 0.52, uTheme);
+    float accentNoise = fbm(vPos.xyz * 4.4 - uSeed * 1.6 + vec3(2.1, 0.6, 1.4) + uTime * 0.08);
+    float accentSpeckles = smoothstep(accentThresh, accentThresh + 0.032, accentNoise);
+    float accentDust = smoothstep(accentThresh + 0.035, accentThresh + 0.075, fbm(vPos.xyz * 6.4 + uSeed * 2.1 - uTime * 0.05));
+    float accentEdgeBreak = smoothstep(0.48, 0.62, fbm(vPos.xyz * 10.8 + uSeed * 5.3 + uTime * 0.04));
+    accentSpeckles *= accentEdgeBreak;
+    accentDust *= mix(0.86, 1.0, accentEdgeBreak);
     
     vec3 goldInk = vec3(1.0, 0.88, 0.55);
+    vec3 accentInk = mix(uAccentColor * 0.8 + vec3(0.03, 0.035, 0.04), uAccentColor * 1.08 + vec3(0.07, 0.05, 0.02), uTheme);
     vec3 finalGlow = mix(internalGlow, goldInk * (1.2 + uTheme * 0.3 + uResonance * 1.8), vein * mix(0.9, 0.85, uTheme)) + goldInk * uResonance * 0.08;
+    finalGlow += accentInk * accentSpeckles * (0.72 + uResonance * 0.5) * mix(1.0, 0.9, uTheme);
+    finalGlow += accentInk * accentDust * (0.34 + uAudio * 0.1 + uResonance * 0.18);
     
     vec3 skyRef = mix(vec3(0.06, 0.08, 0.12), vec3(0.85, 0.88, 0.92), uTheme);
     float rimHalo = pow(1.0 - NdotV, mix(4.6, 3.0, uTheme));
