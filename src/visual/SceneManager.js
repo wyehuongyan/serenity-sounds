@@ -1343,9 +1343,10 @@ export class SceneManager {
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 2000);
     this.camera.position.set(0, 0, 30); // Start far for entrance
     this.targetCameraZ = 10;
+    this.isMobileRuntime = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.getTargetPixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
@@ -1478,7 +1479,6 @@ export class SceneManager {
 
     this.themeTarget = 0.0;
     this.themeBlend  = 0.0;
-    this.isMobileRuntime = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
     this._trailGeometryTimer = 0;
     this._branchGeometryTimer = 0;
     this._graphGeometryTimer = 0;
@@ -1733,7 +1733,7 @@ export class SceneManager {
       });
 
       // ── "Stroke Bundle" Cursor Connection ──
-      const bundleCount = 3;
+      const bundleCount = this.isMobileRuntime ? 2 : 3;
       const ribbons = [];
       for (let i = 0; i < bundleCount; i++) {
         const mat = new THREE.ShaderMaterial({
@@ -1790,7 +1790,7 @@ export class SceneManager {
     this.generateGraph(moodParameters.colorPalette);
 
     // ── Lightweight Dust Particle Emitter (single draw call) ──
-    const DUST_COUNT = 200;
+    const DUST_COUNT = this.isMobileRuntime ? 120 : 200;
     const dustPositions = new Float32Array(DUST_COUNT * 3);
     const dustAlphas = new Float32Array(DUST_COUNT);
     const dustSizes = new Float32Array(DUST_COUNT);
@@ -1907,9 +1907,16 @@ export class SceneManager {
   onResize() {
     const w = this.container.clientWidth  || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
+    this.renderer.setPixelRatio(this.getTargetPixelRatio());
     this.camera.aspect = w/h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+  }
+
+  getTargetPixelRatio() {
+    return this.isMobileRuntime
+      ? Math.min(window.devicePixelRatio || 1, 1.35)
+      : Math.min(window.devicePixelRatio || 1, 2);
   }
 
   animate() {
