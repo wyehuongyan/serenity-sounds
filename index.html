@@ -24,7 +24,7 @@
   </svg>
 
     <!-- Phase 1: Landing -->
-    <div id="phase-landing" class="overlay">
+    <div id="phase-landing" class="overlay is-visible">
       <div class="brand">
         <h1 class="brand-title">Serenity Sounds</h1>
         <p class="brand-tagline">Transform chaos into calm.</p>
@@ -32,6 +32,7 @@
       <button id="begin-btn" class="begin-btn">Begin</button>
       <button id="signup-link" class="signup-link">Sign up</button>
     </div>
+    <button id="return-home-link" class="signup-link return-home-link hidden">Return home</button>
 
     <!-- Phase 2: Input -->
     <div id="phase-input" class="overlay hidden">
@@ -99,6 +100,14 @@
         <div class="time-display" id="timestamp-total">0:00</div>
 
         <button id="reset-btn" class="new-btn hidden">New Cluster</button>
+      </div>
+    </div>
+
+    <div id="focus-reading" class="focus-reading hidden" aria-live="polite">
+      <div class="focus-reading-inner">
+        <p id="focus-reading-role" class="focus-reading-role"></p>
+        <h3 id="focus-reading-emotion" class="focus-reading-emotion"></h3>
+        <p id="focus-reading-line" class="focus-reading-line"></p>
       </div>
     </div>
 

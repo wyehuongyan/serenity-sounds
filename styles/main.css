@@ -431,6 +431,20 @@ input {
   box-shadow: none;
 }
 
+.return-home-link {
+  position: fixed;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
+              letter-spacing 600ms ease;
+}
+
+.return-home-link.is-visible {
+  opacity: 0.5;
+  pointer-events: auto;
+}
+
 /* ─── Phase 2: Input ─── */
 
 .input-wrap {
@@ -624,6 +638,93 @@ input {
   pointer-events: none;
   opacity: 0;
   transition: opacity 800ms ease, transform 800ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.focus-reading {
+  position: fixed;
+  left: 50%;
+  bottom: 20vh; /* Drop below the center so it doesn't block the stone */
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 64px));
+  z-index: 950;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 420ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.focus-reading.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-10px); /* Gentle upward float when revealed */
+}
+
+.focus-reading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.focus-reading-role,
+.focus-reading-emotion,
+.focus-reading-line {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 800ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 800ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.focus-reading.is-visible .focus-reading-role,
+.focus-reading.is-visible .focus-reading-emotion,
+.focus-reading.is-visible .focus-reading-line {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.focus-reading-role {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.4em;
+  text-transform: lowercase; /* Sumivibe minimalist */
+  color: var(--text-muted);
+  opacity: 0.88;
+}
+
+.focus-reading.is-visible .focus-reading-role {
+  transition-delay: 100ms;
+}
+
+.focus-reading-emotion {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-weight: 300;
+  font-size: clamp(1.4rem, 2.5vw, 1.8rem);
+  letter-spacing: 0.15em;
+  text-transform: lowercase;
+  color: var(--text);
+  line-height: 1.2;
+  max-width: 18ch;
+  text-wrap: balance;
+}
+
+.focus-reading.is-visible .focus-reading-emotion {
+  transition-delay: 250ms;
+}
+
+.focus-reading-line {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  font-style: italic;
+  color: var(--text-muted);
+  opacity: 0.7;
+  line-height: 1.6;
+  max-width: 30ch;
+  text-wrap: balance;
+}
+
+.focus-reading.is-visible .focus-reading-line {
+  transition-delay: 400ms;
 }
 
 .player-bar.is-visible {
@@ -1049,8 +1150,8 @@ input {
 #player-bar,
 #history-toggle {
   opacity: 0;
-  transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1),
-              transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 #phase-landing.is-visible,
@@ -1060,9 +1161,55 @@ input {
   opacity: 1;
 }
 
-/* Landing starts visible */
-#phase-landing {
+#phase-landing,
+#phase-input {
+  transform: translateY(18px) scale(0.988);
+}
+
+#phase-landing.is-visible,
+#phase-input.is-visible {
+  transform: translateY(0) scale(1);
+}
+
+#history-toggle {
+  transform: translateY(10px);
+}
+
+#history-toggle.is-visible {
+  transform: translateY(0);
+}
+
+#phase-landing .brand,
+#phase-landing .signup-link,
+#phase-input .input-wrap {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#phase-landing.is-visible .brand,
+#phase-landing.is-visible .signup-link,
+#phase-input.is-visible .input-wrap {
   opacity: 1;
+  transform: translateY(0);
+}
+
+#phase-landing .brand {
+  transition-delay: 80ms;
+}
+
+#phase-landing .signup-link {
+  transition-delay: 170ms;
+}
+
+#phase-input .input-wrap {
+  transition-delay: 120ms;
+  transform: translate(-50%, calc(-50% + 22px));
+}
+
+#phase-input.is-visible .input-wrap {
+  transform: translate(-50%, -50%);
 }
 
 .fade-out {
@@ -1081,6 +1228,7 @@ input {
 @media (max-width: 600px) {
   #phase-input.touch-mash-mode {
     touch-action: none;
+    pointer-events: auto;
   }
 
   .brand {
@@ -1142,6 +1290,19 @@ input {
 
   .history-drawer {
     width: 260px;
+  }
+
+  .focus-reading {
+    bottom: 18vh;
+    width: min(320px, calc(100vw - 48px));
+  }
+
+  .focus-reading-emotion {
+    font-size: 1rem;
+  }
+
+  .focus-reading-line {
+    font-size: 0.76rem;
   }
 
   .cursor-dot,
