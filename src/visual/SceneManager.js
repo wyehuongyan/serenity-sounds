@@ -136,6 +136,11 @@ const PAPER_FRAG = /* glsl */`
   uniform float uRippleAge;
   uniform float uHover;    // 0 -> 1 dramatic hover intensity
   uniform vec2  uCursorPos; // Cursor UV for hover halo
+  
+  uniform float uLandingRipple;
+  uniform float uLandingHover;
+  uniform float uLandingTap;
+  uniform vec2  uLandingOrigin;
   ${GLSL_NOISE}
 
   void main() {
@@ -160,6 +165,48 @@ const PAPER_FRAG = /* glsl */`
     vec3 col = mix(baseCol, inkSwirl, 0.3) + mix(grain, -grain, uTheme) - mottle * 0.25;
     col = mix(col, skyCol, fresnel * 0.04 * (0.2 + uPlayback)) + sheen;
 
+    if (uLandingRipple > 0.0) {
+      vec2 center = uLandingOrigin;
+      float dist = length(vUv - center) * 100.0;
+      
+      // Continuous, visible tiny droplets (magnetic liquid feel)
+      float p1 = dist * 1.8 - uTime * 2.0; 
+      float p2 = dist * 2.5 - uTime * 3.1; // Secondary harmonic
+      
+      float baseD = cos(p1) * 0.7 + cos(p2) * 0.3; // Complex Specular derivative
+      float envelope = exp(-dist * 0.06); // Let ripples travel further before fading
+      
+      // Hover deepens the 3D displacement
+      float hoverAmp = mix(0.7, 1.8, uLandingHover); // Stronger base amplitude
+      float finalD = baseD * envelope * hoverAmp;
+      
+      // Tap causes a single, massive Gaussian swell (Soliton)
+      float tapD = 0.0;
+      if (uLandingTap >= 0.0) {
+        float ringRad = uLandingTap * 15.0; // Expand gently at 15 units/sec
+        float tapDist = dist - ringRad;
+        
+        // Gaussian envelope isolates a single intense crest and trough
+        float tapWave = sin(tapDist * 0.25); 
+        float tapEnvelope = exp(-tapDist * tapDist * 0.015) * exp(-uLandingTap * 0.3);
+        tapD = tapWave * tapEnvelope * 4.5; // Significant depth and weight
+      }
+      
+      finalD += tapD;
+
+      // Realistic 3D water highlight and deep shadow based on slope
+      float spec = max(0.0, finalD) * 0.18; // Much stronger highlight for visibility
+      float shadow = max(0.0, -finalD) * 0.12; // Deeper shading
+      
+      vec3 lightGloss = vec3(0.95, 0.98, 1.0);  // Brilliant sheen
+      vec3 darkGloss  = vec3(0.25, 0.35, 0.5);  // Deep bioluminescent sheen
+      vec3 gloss = mix(darkGloss, lightGloss, uTheme);
+      vec3 shade = mix(vec3(0.01), vec3(0.06), uTheme); // Dense shadow basin
+      
+      col += gloss * spec * uLandingRipple;
+      col -= shade * shadow * uLandingRipple;
+    }
+
     // ── Dramatic Hover Bleed ──
     if (uHover > 0.01) {
       float hDist = length(vUv - uCursorPos);
@@ -170,11 +217,19 @@ const PAPER_FRAG = /* glsl */`
     }
 
     if (uRippleAge >= 0.0) {
-      float rDist = length(vUv - uRippleOrigin);
-      float rWave = sin(rDist * 40.0 - uRippleAge * 5.0) * 0.5 + 0.5;
-      float rFade = exp(-uRippleAge * 1.5) * smoothstep(0.0, 0.3, uRippleAge);
-      float rMask = smoothstep(uRippleAge * 0.15, uRippleAge * 0.12, rDist);
-      col += mix(rWave * rFade * rMask * 0.04, -rWave * rFade * rMask * 0.02, uTheme);
+      float dist = length(vUv - uRippleOrigin) * 100.0;
+      float ringRad = uRippleAge * 15.0;
+      float tapDist = dist - ringRad;
+      
+      float tapWave = sin(tapDist * 0.35); 
+      float tapEnvelope = exp(-tapDist * tapDist * 0.02) * exp(-uRippleAge * 0.45);
+      
+      float spec = max(0.0, tapWave * tapEnvelope * 3.5) * 0.12;
+      float shadow = max(0.0, -tapWave * tapEnvelope * 3.5) * 0.08;
+
+      vec3 gloss = mix(vec3(0.2, 0.3, 0.5), vec3(0.85, 0.9, 1.0), uTheme);
+      col += gloss * spec;
+      col -= vec3(1.0) * shadow;
     }
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
@@ -185,16 +240,34 @@ const BEGIN_CUBE_VERT = /* glsl */`
   varying vec2  vUv;
   varying vec3  vNormal;
   varying vec3  vPos;
+  varying vec3  vWorldPos;
   ${GLSL_NOISE}
+  
   void main() {
-    vUv = uv; vPos = position;
-    float bump = fbm(vec2(position.x * 4.0 + position.z * 3.0, position.y * 4.5 + position.z * 3.5)) - 0.5;
-    vec3 displaced = position + normal * bump * 0.06;
-    float nx = fbm(vec2(position.y * 9.0 + position.z * 5.2, position.x * 7.3));
-    float ny = fbm(vec2(position.z * 6.5 + position.x * 4.8, position.y * 8.8));
-    vec3 pertNormal = normalize(normal + vec3(nx - 0.5, ny - 0.5, 0.0) * 0.55);
+    vUv = uv; 
+    vPos = position;
+    
+    // Intense, slow breathing liquid displacement
+    float time = uTime * 0.3;
+    float bump1 = fbm(vec2(position.x * 2.5 + time, position.y * 3.0 - time));
+    float bump2 = fbm(vec2(position.y * 2.0 - time*1.2, position.z * 2.8 + time*0.8));
+    float bump3 = fbm(vec2(position.z * 3.2 + time*0.5, position.x * 1.8 - time*1.5));
+    
+    float totalBump = (bump1 + bump2 + bump3) / 3.0 - 0.5;
+    
+    // Exaggerate displacement for "Zero-G Droplet" look
+    vec3 displaced = position + normal * totalBump * 0.22;
+    
+    // Recalculate procedural normals for perfectly smooth dielectric gloss
+    float nx = fbm(vec2(position.y * 4.0 + time, position.x * 5.0));
+    float ny = fbm(vec2(position.z * 5.0 - time, position.y * 4.0));
+    vec3 pertNormal = normalize(normal + vec3(nx - 0.5, ny - 0.5, 0.0) * 0.9);
+    
     vNormal = normalize(normalMatrix * pertNormal);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+    vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
+    vWorldPos = worldPos.xyz;
+    
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
 
@@ -206,54 +279,75 @@ const BEGIN_CUBE_FRAG = /* glsl */`
   varying vec2  vUv;
   varying vec3  vNormal;
   varying vec3  vPos;
+  varying vec3  vWorldPos;
   ${GLSL_NOISE}
 
   void main() {
-    vec3  p3 = vPos * 3.0;
-    float swirl = fbm(vec2(fbm(p3.xy + uTime * 0.1), fbm(p3.yz - uTime * 0.12)) * 2.5 + uTime * 0.06);
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(cameraPosition - vWorldPos); 
+    float NdotV = max(0.0, dot(N, V));
+    
+    // Liquid Glass enveloping a rotating trapped star/nebula
+    vec3 p3 = vPos * 2.2; 
+    
+    // The Core: Violent internal nebula
+    float swirl = fbm(vec2(fbm(p3.xy + uTime * 0.15), fbm(p3.yz - uTime * 0.2)) * 3.0 + uTime * 0.12);
     float dist = length(vPos);
-    float glow = pow(max(0.0, 1.0 - dist * 2.5), 4.5) * 1.2;
     
-    vec3 coreColD = vec3(0.1, 0.4, 0.8) * glow;
-    vec3 inkColD = mix(vec3(0.01), uInkColor, swirl) + vec3(0.2, 0.4, 0.6) * (sin(dist * 12.0 - uTime * 2.0) * 0.5 + 0.5) * 0.15;
+    // Super dense glowing core
+    float coreGlow = pow(max(0.0, 1.0 - dist * 2.4), 3.0) * 2.5; 
     
-    float stoneGrain = fbm(vPos.xyz * 5.0) * 0.08;
-    vec3 vellum = vec3(0.94, 0.92, 0.88);
-    vec3 porcelain = vec3(0.99, 0.985, 0.965);
-    vec3 pearl = vec3(0.985, 0.965, 0.93);
-    vec3 inkColL = mix(vellum, porcelain, glow * 0.42) + stoneGrain * 0.55;
-    inkColL = mix(inkColL, pearl, pow(max(0.0, 1.0 - dist * 1.8), 2.2) * 0.3);
-    float kVein = smoothstep(0.58, 0.69, fbm(vPos.xyz * 8.6 + uTime * 0.04));
-    float kVeinFine = smoothstep(0.67, 0.74, fbm(vPos.xyz * 16.0 - uTime * 0.025));
-    float kDust = pow(fbm(vPos.xyz * 13.0 + uTime * 0.03), 7.0) * 0.55;
-    vec3 veinGold = vec3(1.0, 0.86, 0.48);
-    inkColL += veinGold * (kVein * 1.22 + kVeinFine * 0.34 + kDust * 0.45);
+    // Light Mode: Serene Opal core (subtle peach, ivory, and pale cyan instead of full rainbow)
+    vec3 opalCol = vec3(
+      sin(swirl * 4.0 + uTime) * 0.1 + 0.9,       // Soft Peach/Ivory
+      sin(swirl * 4.0 + uTime + 1.5) * 0.15 + 0.85, // Pale Green-white
+      sin(swirl * 4.0 + uTime + 3.0) * 0.2 + 0.8  // Gentle Cyan
+    );
+    vec3 coreL = mix(vec3(0.5, 0.6, 0.7), opalCol, 0.85) * coreGlow * 1.6;
     
-    vec3 coreCol = mix(coreColD, vec3(1.0, 0.975, 0.9) * glow * 0.55, uTheme);
-    vec3 inkCol  = mix(inkColD,  inkColL,  uTheme);
+    // Dark mode: Refined deep gold
+    vec3 goldCol = mix(vec3(0.8, 0.2, 0.0), vec3(1.0, 0.8, 0.2), swirl);
+    vec3 coreD = goldCol * coreGlow * 1.8;
     
-    // ── Celestial Gold Dust ──
-    float dust = pow(fbm(vPos.xyz * 18.0 + uTime * 0.02), 12.0) * 2.5;
-    inkCol = mix(inkCol, vec3(1.0, 0.88, 0.55), dust);
+    vec3 activeCore = mix(coreD, coreL, uTheme);
     
-    float stars = pow(fbm(vPos.xyz * 12.0), 16.0) * 4.0 * (1.0 - uTheme);
+    // The Surface: Flawless liquid glass
+    // Refract dark/light surroundings for visibility without overpowering
+    float edgeDarkening = pow(1.0 - NdotV, 2.5);
+    vec3 lightGlass = mix(vec3(0.98, 0.99, 1.0), vec3(0.15, 0.2, 0.25), edgeDarkening);
+    vec3 glassTint = mix(vec3(0.015, 0.02, 0.03), lightGlass, uTheme);
     
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    float diff = max(dot(vNormal, lightDir), 0.0) * 0.5 + 0.5;
-    float spec = pow(max(dot(vNormal, lightDir), 0.0), 90.0) * mix(1.5, 0.78, uTheme);
-    float rim = pow(1.0 - max(dot(vNormal, vec3(0,0,1)), 0.0), 3.5) * mix(0.7, 0.4, uTheme);
-    float innerHalo = pow(max(0.0, 1.0 - dist * 1.9), 3.0) * uTheme;
-    float pearlHalo = pow(max(0.0, 1.0 - dist * 1.55), 4.4) * uTheme;
-    float warmSheen = pow(max(dot(vNormal, normalize(vec3(-0.3, 0.95, 0.55))), 0.0), 6.0) * uTheme;
+    // Subtle Chromatic Aberration Rim (Muted lead-crystal dispersion, not neon bubbles)
+    float rimHalo = pow(1.0 - NdotV, mix(4.0, 2.8, uTheme));
+    float caPhase = NdotV * 5.0 + uTime * 0.4;
+    vec3 chromAb = vec3(
+      sin(caPhase) * 0.1 + 0.9,         // Warm edge
+      sin(caPhase + 2.0) * 0.1 + 0.9,   // Neutral edge
+      sin(caPhase + 4.0) * 0.1 + 0.9    // Cool edge
+    ) * rimHalo * mix(0.8, 0.5, uTheme); // Greatly reduced multiplier
+    
+    // Extreme Specular Glint (Dielectric reflection) to ensure it looks like solid glass
+    vec3 L = normalize(vec3(0.8, 1.0, 0.5));
+    float spec1 = pow(max(0.0, dot(N, L)), 256.0) * mix(4.0, 2.5, uTheme); 
+    float spec2 = pow(max(0.0, dot(N, normalize(vec3(-0.6, 0.4, 0.8)))), 128.0) * mix(1.8, 1.2, uTheme);
+    vec3 glint = vec3(1.0, 0.98, 0.96) * (spec1 + spec2);
+    
+    // Floating star dust embedded in the glass (subtle)
+    float dust = pow(fbm(vPos.xyz * 15.0 + uTime * 0.06), 14.0) * mix(4.0, 2.0, uTheme);
+    vec3 dustCol = mix(vec3(1.0, 0.8, 0.3), vec3(0.8, 0.9, 1.0), uTheme);
 
-    vec3 finalCol = mix(inkCol, coreCol, glow * 0.8) * mix(1.0, diff, uTheme * 0.5);
-    finalCol += vec3(1.0, 0.95, 0.8) * stars + spec;
-    finalCol += rim * mix(vec3(0.4, 0.7, 1.0), vec3(0.9, 0.85, 0.75), uTheme);
-    finalCol += vec3(1.0, 0.96, 0.88) * innerHalo * 0.22;
-    finalCol += vec3(1.0, 0.98, 0.93) * pearlHalo * 0.18;
-    finalCol += veinGold * warmSheen * 0.1;
+    // Final Glass composition
+    vec3 finalCol = glassTint;
+    
+    // Core glow penetrating the solid glass
+    finalCol += activeCore * mix(0.7, 0.8, uTheme); 
+    
+    // Add realistic subtle rims and sharp glints
+    finalCol += chromAb;
+    finalCol += glint;
+    finalCol += dustCol * dust;
 
-    gl_FragColor = vec4(finalCol, uOpacity);
+    gl_FragColor = vec4(clamp(finalCol, 0.0, 1.0), uOpacity);
   }
 `;
 
@@ -286,72 +380,218 @@ const CUBE_FRAG = /* glsl */`
   uniform float uTheme;
   uniform float uResonance;
   uniform float uHover;
+  uniform float uClusterAura;
   varying vec3  vNormal;
   varying vec3  vPos;
   ${GLSL_NOISE}
 
   void main() {
-    vec3 N = normalize(vNormal); vec3 V = normalize(vec3(0.0, 0.0, 1.0));
+    vec3 N = normalize(vNormal); 
+    vec3 V = normalize(vec3(0.0, 0.0, 1.0));
     vec3 L = normalize(vec3(0.6, 1.0, 0.8));
+    float NdotV = max(0.0, dot(N, V));
+    float NdotL = max(0.0, dot(N, L));
+    
+    // --- Zen Garden Raw Stone ---
     float rockNoise = fbm(vPos.xyz * (3.8 + (1.0 - uTheme) * 1.2) + uSeed);
     float isGem = smoothstep(mix(0.40, 0.42, uTheme), mix(0.45, 0.58, uTheme), rockNoise); 
+    
     vec3 rockCol = mix(vec3(0.06, 0.055, 0.05), vec3(0.78, 0.75, 0.70), uTheme);
     vec3 gemBase = mix(mix(vec3(0.02, 0.015, 0.03), uInkColor, 0.85), vec3(0.82, 0.80, 0.76), uTheme);
+    
+    // Apply heavy paper-like grain
     float grain = fbm(vPos.xyz * 8.0 + uSeed * 3.0) * 0.08;
-    rockCol += mix(grain * 1.1, grain, uTheme); gemBase += mix(grain * 0.4, grain * 0.8, uTheme);
+    rockCol += mix(grain * 1.1, grain, uTheme); 
+    gemBase += mix(grain * 0.4, grain * 0.8, uTheme);
+    
     float irid = fbm(vPos.xyz * 4.5 + uTime * 0.08);
     vec3 gemCol = mix(gemBase, mix(vec3(0.2, 0.4, 0.6), vec3(0.88, 0.86, 0.82), uTheme) * max(0.3, uAudio), irid * mix(0.35, 0.15, uTheme));
+    
     float fracture = step(0.72, fbm(vec2(vPos.x * 12.0, vPos.z * 10.0))) * mix(0.35, 0.12, uTheme);
     vec3 crysD = uInkColor * (1.8 + uAudio * 2.5);
     vec3 crysL = vec3(0.7, 0.68, 0.65) * (1.0 + uAudio * 0.3);
-    vec3 internalGlow = mix(rockCol, mix(gemCol, mix(crysD, crysL, uTheme), pow(1.0 - max(0.0, dot(N, V)), 2.8) + fracture), isGem);
-    internalGlow *= mix(1.1, max(0.0, dot(N, L)) * 0.5 + 0.5, uTheme * 0.6);
+    
+    vec3 internalGlow = mix(rockCol, mix(gemCol, mix(crysD, crysL, uTheme), pow(1.0 - NdotV, 2.8) + fracture), isGem);
+    internalGlow *= mix(1.1, NdotL * 0.5 + 0.5, uTheme * 0.6); // Soft clay/stone diffuse wrapping
+    
     float porcelainBloom = pow(max(0.0, dot(N, normalize(vec3(0.15, 0.95, 0.55)))), 2.4) * uTheme;
-    float subsurface = pow(1.0 - max(0.0, dot(N, V)), 1.9) * uTheme;
+    float subsurface = pow(1.0 - NdotV, 1.9) * uTheme;
     internalGlow += vec3(0.12, 0.095, 0.06) * porcelainBloom * 0.55;
     internalGlow += vec3(0.22, 0.19, 0.14) * subsurface * 0.18;
-    float glint1 = pow(max(0.0, dot(N, normalize(vec3(1.0, 1.0, 1.0)))), 128.0);
-    float glint2 = pow(max(0.0, dot(N, normalize(vec3(-0.8, 0.4, 0.2)))), 96.0);
+    
+    // Matte stone glint (not sharp glass)
+    float glint1 = pow(max(0.0, NdotL), 64.0);
+    float glint2 = pow(max(0.0, dot(N, normalize(vec3(-0.8, 0.4, 0.2)))), 48.0);
     vec3 reflection = (glint1 + glint2 * 0.5) * vec3(1.0, 0.98, 0.95) * (0.2 + step(0.45, fbm(vNormal.xy * 4.2 + uSeed)) * isGem * 0.8) * mix(1.0, 0.3, uTheme);
     
-    // ── Kintsugi Speckles ──
-    float vein = smoothstep(mix(0.68, 0.62, uTheme), mix(0.72, 0.66, uTheme), fbm(vPos.xyz * 7.5 + uTime * 0.05));
-    float speckleThresh = mix(0.62, 0.76, uTheme);
-    float speckles = smoothstep(speckleThresh, speckleThresh + 0.015, fbm(vPos.xyz * 15.5 + uSeed * 3.0));
-    vein = max(vein, speckles * (0.65 + uResonance * 0.35));
+    // --- Audio-Reactive Kintsugi Veins (Fireflies) ---
+    float veinNoise = fbm(vPos.xyz * 7.5 + uTime * 0.05);
+    float vein = smoothstep(mix(0.68, 0.62, uTheme), mix(0.72, 0.66, uTheme), veinNoise);
+    float speckleThresh = mix(0.55, 0.65, uTheme);
+    float speckles = smoothstep(speckleThresh, speckleThresh + 0.04, fbm(vPos.xyz * 7.0 + uSeed * 3.0 + uTime * 0.3));
+    vein = max(vein, speckles * (1.2 + uResonance * 4.0));
     
     vec3 goldInk = vec3(1.0, 0.88, 0.55);
     vec3 finalGlow = mix(internalGlow, goldInk * (1.2 + uTheme * 0.3 + uResonance * 1.8), vein * mix(0.9, 0.85, uTheme)) + goldInk * uResonance * 0.08;
+    
     vec3 skyRef = mix(vec3(0.06, 0.08, 0.12), vec3(0.85, 0.88, 0.92), uTheme);
-    float rimHalo = pow(1.0 - max(0.0, dot(N, V)), mix(4.6, 3.0, uTheme));
+    float rimHalo = pow(1.0 - NdotV, mix(4.6, 3.0, uTheme));
     vec3 pearlRim = vec3(0.96, 0.93, 0.88) * rimHalo * uTheme * 0.16;
+    
     vec3 hoverTint = mix(vec3(0.28, 0.38, 0.56), vec3(0.96, 0.86, 0.58), uTheme);
     vec3 hoverGlow = hoverTint * rimHalo * uHover * mix(0.22, 0.34, uTheme);
+    vec3 clusterAura = mix(vec3(0.34, 0.46, 0.66), vec3(0.96, 0.86, 0.66), uTheme) * rimHalo * uClusterAura * mix(0.18, 0.28, uTheme);
+    
     gl_FragColor = vec4(
-      mix(finalGlow, skyRef * 0.15, pow(1.0 - max(0.0, dot(N, V)), mix(6.5, 3.5, uTheme)) * mix(0.4, 0.2, uTheme))
+      clamp(mix(finalGlow, skyRef * 0.15, pow(1.0 - NdotV, mix(6.5, 3.5, uTheme)) * mix(0.4, 0.2, uTheme))
       + reflection
       + pearlRim
-      + hoverGlow,
+      + clusterAura
+      + hoverGlow, 0.0, 1.0),
       uOpacity
     );
   }
 `;
 
+// --- FOCUS RESIDUE SHADERS ---
+const RESIDUE_CORE_VERT = /* glsl */`
+  varying vec3 vNormal;
+  varying vec3 vPos;
+  void main() {
+    vNormal = normal;
+    vPos = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const RESIDUE_CORE_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uAudio;
+  uniform float uFocusEase;
+  uniform float uMotif;
+  varying vec3 vNormal;
+  varying vec3 vPos;
+  ${GLSL_NOISE}
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(vec3(0.0, 0.0, 1.0));
+    float rim = pow(1.0 - max(0.0, dot(N, V)), 2.2);
+
+    float tSpeed = mix(0.1, 0.6, smoothstep(0.0, 5.0, uMotif) + uAudio * 0.5);
+    float t = uTime * tSpeed;
+    
+    float n1 = fbm(vPos * 4.5 + t);
+    float n2 = fbm(vPos * 8.2 - t * 1.5) * 0.5;
+    float dust = n1 + n2;
+
+    vec3 cDark = vec3(0.12, 0.08, 0.04);
+    vec3 cGold = vec3(0.9, 0.75, 0.3);
+    
+    if (uMotif < 0.5) { cGold = vec3(1.0, 0.8, 0.35); } // restless
+    else if (uMotif < 1.5) { cGold = vec3(0.85, 0.68, 0.45); cDark = vec3(0.15, 0.1, 0.05); } // hesitation 
+    else if (uMotif < 2.5) { cGold = vec3(0.88, 0.72, 0.38); } // settling
+    else if (uMotif < 3.5) { cGold = vec3(1.0, 0.85, 0.5); } // aftershock
+    else if (uMotif < 4.5) { cGold = vec3(0.95, 0.55, 0.15); cDark = vec3(0.2, 0.04, 0.0); } // tension
+    else { cGold = vec3(0.85, 0.78, 0.6); } // scatter
+
+    vec3 coreColor = mix(cDark, cGold, smoothstep(0.3, 0.8, dust));
+    coreColor += cGold * rim * uFocusEase * (0.5 + uAudio);
+    coreColor *= (1.0 + uAudio * 0.8);
+    
+    float alpha = smoothstep(0.05, 0.55, dust) * uFocusEase * mix(0.6, 0.85, uAudio);
+    
+    gl_FragColor = vec4(coreColor, alpha);
+  }
+`;
+
+const RESIDUE_SWARM_VERT = /* glsl */`
+  uniform float uTime;
+  uniform float uAudio;
+  uniform float uFocusEase;
+  uniform float uMotif;
+  attribute float aPhase;
+  attribute float aSize;
+  attribute vec3 aAxis;
+  varying float vAlpha;
+  varying vec3 vColor;
+  ${GLSL_NOISE}
+
+  void main() {
+    float speed = 0.5;
+    float expand = 1.0;
+    vec3 cGold = vec3(0.9, 0.75, 0.3);
+
+    if (uMotif < 0.5) { speed = 0.8; expand = 1.1; cGold = vec3(1.0, 0.8, 0.35); }
+    else if (uMotif < 1.5) { speed = 0.3; expand = 0.6; cGold = vec3(0.85, 0.68, 0.45); }
+    else if (uMotif < 2.5) { speed = 0.4; expand = 0.8; cGold = vec3(0.88, 0.72, 0.38); }
+    else if (uMotif < 3.5) { speed = 1.2; expand = 1.3; cGold = vec3(1.0, 0.85, 0.5); }
+    else if (uMotif < 4.5) { speed = 1.5; expand = 0.55; cGold = vec3(0.95, 0.55, 0.15); }
+    else { speed = 0.9; expand = 1.7; cGold = vec3(0.85, 0.78, 0.6); }
+
+    speed *= (1.0 + uAudio * 1.8);
+    float t = uTime * speed * 0.4 + aPhase;
+    
+    vec3 pos = position;
+    float r = length(pos) * expand * uFocusEase * 0.45;
+    
+    float angle = t;
+    vec3 q = cross(aAxis, pos);
+    vec3 rotPos = pos * cos(angle) + q * sin(angle) + aAxis * dot(aAxis, pos) * (1.0 - cos(angle));
+    
+    vec3 curl = vec3(
+      fbm(rotPos * 4.0 + t),
+      fbm(rotPos * 4.0 + t + 10.0),
+      fbm(rotPos * 4.0 + t + 20.0)
+    ) * 2.0 - 1.0;
+
+    vec3 finalPos = normalize(rotPos + curl * 0.4) * r * mix(0.6, 1.4, fbm(rotPos * 2.0 - t));
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(finalPos, 1.0);
+    
+    float camDist = length(gl_Position.xyz);
+    float pointScale = aSize * mix(0.5, 2.0, fbm(vec3(aPhase, t * 2.0, 0.0)));
+    gl_PointSize = pointScale * (1.0 + uAudio * 2.0) * uFocusEase * (10.0 / camDist);
+    
+    vAlpha = smoothstep(0.0, 0.4, uFocusEase) * 0.85;
+    vColor = cGold * (1.0 + uAudio);
+  }
+`;
+
+const RESIDUE_SWARM_FRAG = /* glsl */`
+  varying float vAlpha;
+  varying vec3 vColor;
+  void main() {
+    float dist = length(gl_PointCoord.xy - vec2(0.5));
+    float alpha = smoothstep(0.5, 0.1, dist) * vAlpha;
+    gl_FragColor = vec4(vColor, alpha);
+  }
+`;
+
 const RIBBON_VERT = /* glsl */`
   varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
   uniform float uTime;
   uniform float uAudio;
   void main() {
     vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+    
     vec3 pos = position;
     // Add subtle vertex-level vibration for "aliveness"
     pos.y += sin(uv.x * 12.0 + uTime * 4.0) * 0.005 * uAudio;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    
+    vec4 wp = modelMatrix * vec4(pos, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
 
 const RIBBON_FRAG = /* glsl */`
   varying vec2  vUv;
+  varying vec3  vNormal;
+  varying vec3  vWorldPos;
   uniform vec3  uColor;
   uniform float uOpacity;
   uniform float uTime;
@@ -366,17 +606,21 @@ const RIBBON_FRAG = /* glsl */`
     float age = max(0.0, uTime - uSpawnTime);
     float across = (vUv.y - 0.5) * 2.0;
 
+    // Audio-Reactive "Wet Bleed" Physics (massively boosted)
+    float wetLevel = uAudio * 8.0;
+
     // ── High-Contrast "Tear" System ──
-    // Create sharp, jagged bristle edges using thresholded noise
+    // Create sharp, jagged bristle edges
     float noiseEdge = fbm(vec2(vUv.x * 8.0 + uSeed, vUv.y * 12.0)) * 0.25;
-    float bristleMask = smoothstep(0.95 + noiseEdge, 0.85 + noiseEdge, abs(across));
+    // Bleed edge outwards when audio hits
+    float bristleMask = smoothstep(0.95 + noiseEdge - wetLevel * 0.15, 0.85 + noiseEdge + wetLevel * 0.05, abs(across));
     
     // Internal "Paper Gaps" (Dry Brush)
-    // High-frequency, horizontally stretched noise creates sharp "starvation" breaks
     float scratchNoise = fbm(vec2(vUv.x * 12.0 + uSeed, vUv.y * 35.0));
-    // Ink depletion factor: more breaks towards the end of the stroke
     float depletion = smoothstep(0.4, 1.2, vUv.x + scratchNoise * 0.3);
-    float inkBreak = step(0.7 - depletion * 0.3, scratchNoise);
+    
+    // Flood dry gaps with ink when audio hits
+    float inkBreak = step(0.7 - depletion * 0.3 + wetLevel * 0.4, scratchNoise);
     
     float finalDensity = bristleMask * (1.0 - inkBreak * 0.85);
 
@@ -385,7 +629,7 @@ const RIBBON_FRAG = /* glsl */`
     float pressIn = smoothstep(0.0, 0.05, vUv.x);
     finalDensity *= taper * pressIn;
 
-    // Highest-contrast alpha logic: sharp "splinters"
+    // Alpha logic
     float alpha = finalDensity * uOpacity * 0.99;
     
     // Deep carbon blacks with texture-based richness
@@ -397,6 +641,19 @@ const RIBBON_FRAG = /* glsl */`
     inkColL = mix(inkColL, goldCol, uGold * 0.9);
 
     vec3 inkCol  = mix(inkColD, inkColL, uTheme);
+    
+    // ── Specular Mica / Gold Flakes ──
+    // Lower frequency so flakes are physically larger and survive anti-aliasing
+    float flakeNoise = fbm(vWorldPos * 35.0 + uSeed * 10.0);
+    
+    // Twinkling intense dielectric flakes (bypassing strict NdotH since ribbons face camera)
+    float flakeTwinkle = sin(uTime * 18.0 + flakeNoise * 40.0);
+    float flakeMask = smoothstep(0.70, 0.95, flakeNoise); // Sparse distribution
+    float spec = flakeMask * max(0.0, flakeTwinkle) * (15.0 + uAudio * 40.0); // Extreme boost
+    
+    // Flakes are silver/diamond in dark mode, rich gold in light mode
+    vec3 flakeTones = mix(vec3(0.9, 0.95, 1.0), vec3(1.2, 1.0, 0.6), uTheme);
+    inkCol += flakeTones * spec * finalDensity; // Only sparkle where there is ink
 
     if (alpha < 0.05) discard;
     gl_FragColor = vec4(inkCol, alpha);
@@ -411,7 +668,11 @@ const THREAD_VERT = /* glsl */`
   void main() {
     vUv = uv;
     vec3 pos = position;
-    pos.z += sin(uv.x * 3.14159 + uTime * 0.42 + uSeed * 6.28318) * 0.006 * uPlayback;
+    
+    // 3D Z-Axis Arcing: Bow the threads outward into a beautiful deep web
+    float arc = sin(uv.x * 3.14159);
+    pos.z += arc * 0.8 * uPlayback + sin(uv.x * 6.28 + uTime + uSeed) * 0.08 * uPlayback;
+    
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
@@ -422,21 +683,39 @@ const THREAD_FRAG = /* glsl */`
   uniform float uOpacity;
   uniform float uTime;
   uniform float uTheme;
+  uniform float uAudio;
   uniform float uSeed;
   uniform float uPlayback;
+  ${GLSL_NOISE}
 
   void main() {
     float across = abs((vUv.y - 0.5) * 2.0);
     float core = smoothstep(1.0, 0.18, across);
     float edgeGlow = smoothstep(1.0, 0.55, across) * 0.35;
     float taper = smoothstep(0.0, 0.05, vUv.x) * smoothstep(1.0, 0.95, vUv.x);
-    float breathe = 0.94 + sin(uTime * 0.55 + uSeed * 5.7 + vUv.x * 4.2) * 0.06 * uPlayback;
+    
+    // Ambient liquid light flow
+    float flow = fbm(vec3(vUv.x * 6.0 - uTime * 2.5, uSeed * 10.0, uTime * 0.5));
+    
+    // High-velocity bioluminescent energy pulses (directional transfer!)
+    float energyRaw = sin(vUv.x * 20.0 - uTime * 12.0 + uSeed * 15.0);
+    float energyPulse = smoothstep(0.85, 1.0, energyRaw) * (2.0 + uAudio * 12.0); // Decoupled from uPlayback so it pulses while idle
+    
+    float pulse = smoothstep(0.2, 0.6, flow) * uPlayback + energyPulse;
+    
+    float breathe = 0.94 + sin(uTime * 0.55 + uSeed * 5.7 + vUv.x * 4.2) * 0.06 * mix(1.0, uPlayback, 0.5);
+    
     float alpha = (core * 0.85 + edgeGlow) * taper * breathe * uOpacity;
-
+    alpha *= (0.4 + pulse * 2.5 + uAudio * 1.5);
+    
     vec3 darkThread = vec3(0.72, 0.69, 0.64);
     vec3 lightThread = uColor;
     vec3 col = mix(darkThread, lightThread, uTheme);
     col += vec3(0.08, 0.06, 0.02) * edgeGlow * (0.3 + uTheme * 0.7);
+    
+    // Add pulsing liquid gold/ink bioluminescence
+    vec3 pulseCol = mix(vec3(0.3, 0.15, 0.1), vec3(1.5, 1.1, 0.6), uTheme);
+    col += pulseCol * pulse * 8.0 * uOpacity;
 
     if (alpha < 0.015) discard;
     gl_FragColor = vec4(col, alpha);
@@ -463,38 +742,49 @@ const SPLATTER_FRAG = /* glsl */`
   void main() {
     vec2 p = vUv - 0.5;
     float d = length(p);
-    float n = fbm(vUv * 2.8 + uTime * 0.05);
-    float n2 = fbm(vUv * 12.0 - uTime * 0.02);
-    float n3 = fbm(vUv * 25.0 + uSeed);
-    float edge = d + n * 0.35 + n2 * 0.1 + n3 * 0.03;
-    float shape = smoothstep(0.56, 0.38, edge);
-    float satellite = smoothstep(0.62, 0.58, edge) * step(0.7, n2);
-    shape = max(shape, satellite * 0.6);
+    
+    // Crisp ink drop shape with organic noise
+    float n = fbm(vUv * 4.0 + uSeed);
+    float n2 = fbm(vUv * 18.0 + uSeed * 3.0);
+    float edge = d + n * 0.18 + n2 * 0.05;
+    
+    // Hard-edged ink shape (tight smoothstep = crisp boundary)
+    float shape = smoothstep(0.48, 0.44, edge);
+    // Satellite micro-droplets around the main drop
+    float satellite = smoothstep(0.56, 0.53, edge) * step(0.72, n2);
+    shape = max(shape, satellite * 0.7);
+    
     if (shape < 0.01) discard;
-
-    vec3 N = normalize(vec3(p, 0.45));
-    vec3 L = normalize(vec3(1.0, 1.0, 1.0));
+    
+    // 3D Normal for the wet droplet surface tension
+    vec3 N = normalize(vec3(p.x * 3.0, p.y * 3.0, 0.5 - d));
+    vec3 L = normalize(vec3(0.5, 0.8, 1.0));
+    float NdotL = max(0.0, dot(N, L));
+    
     vec3 V = vec3(0.0, 0.0, 1.0);
     vec3 H = normalize(L + V);
-
-    float depth = (1.0 - d * 2.0);
-    float swirls = fbm(vUv * 8.0 + uTime * 0.08);
-    vec3 baseColD = uColor * (0.6 + depth * 0.4 + swirls * 0.2);
-    vec3 baseColL = vec3(0.06, 0.05, 0.04) * (0.8 + depth * 0.2 + swirls * 0.1);
+    float spec = pow(max(0.0, dot(N, H)), 120.0) * 2.0;
+    
+    // Deep carbon ink with subtle depth
+    float depth = 1.0 - d * 2.0;
+    vec3 baseColD = uColor * (0.5 + depth * 0.5 + NdotL * 0.3);
+    vec3 baseColL = vec3(0.04, 0.03, 0.02);
     
     // ── Gold Ink for Light Mode ──
-    vec3 goldCol = vec3(0.95, 0.82, 0.45); 
+    vec3 goldCol = vec3(0.95, 0.82, 0.45) * (0.8 + NdotL * 0.4); 
     baseColL = mix(baseColL, goldCol, uGold * 0.95);
 
     vec3 baseCol  = mix(baseColD, baseColL, uTheme);
     
-    float spec = pow(max(0.0, dot(N, H)), mix(64.0, 32.0, uGold)) * mix(0.8, 1.5, uGold);
-    vec3 finalCol = baseCol + spec * vec3(0.08, 0.08, 0.12);
-    float alpha = shape * uOpacity * (1.0 - n2 * 0.3);
-    vec3 edgeCol = mix(baseCol * 0.15, finalCol, smoothstep(0.0, 0.2, alpha));
+    // Add sharp specular glint for the wet look
+    baseCol += vec3(1.0, 0.98, 0.95) * spec * mix(0.4, 1.2, uGold); 
     
-    gl_FragColor = vec4(edgeCol, alpha);
+    // Crisp, full-opacity alpha (no soft bleed)
+    float alpha = shape * uOpacity;
+    
+    gl_FragColor = vec4(baseCol, alpha);
   }
+
 `;
 
 // ─── JS cloth wave ──────────────────────────────────────────────────────────
@@ -547,12 +837,97 @@ function createCubeShaderMaterial(inkColor, opacity, seed = 0) {
       uTheme:    { value: 0 },
       uResonance: { value: 0 },
       uHover:    { value: 0 },
+      uClusterAura: { value: 0 },
     },
     vertexShader:   CUBE_VERT,
     fragmentShader: CUBE_FRAG,
     transparent: true,
     side: THREE.FrontSide,
   });
+}
+
+function createFocusResidueVisual() {
+  const group = new THREE.Group();
+  group.visible = false;
+  group.renderOrder = 12;
+
+  // 1. Volumetric Nebula Core
+  const coreGeo = new THREE.IcosahedronGeometry(0.06, 4); // Smoother core
+  const coreMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uAudio: { value: 0 },
+      uFocusEase: { value: 0 },
+      uMotif: { value: 0 }
+    },
+    vertexShader: RESIDUE_CORE_VERT,
+    fragmentShader: RESIDUE_CORE_FRAG,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: false,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  group.add(core);
+
+  // 2. Kintsugi Firefly Swarm
+  const particleCount = 200;
+  const swarmGeo = new THREE.BufferGeometry();
+  const positions = new Float32Array(particleCount * 3);
+  const phases = new Float32Array(particleCount);
+  const sizes = new Float32Array(particleCount);
+  const axes = new Float32Array(particleCount * 3);
+
+  for (let i = 0; i < particleCount; i++) {
+    // Random point on sphere
+    const u = seededVal(1000 + i * 3);
+    const v = seededVal(2000 + i * 7);
+    const theta = u * 2.0 * Math.PI;
+    const phi = Math.acos(2.0 * v - 1.0);
+    const sinPhi = Math.sin(phi);
+    
+    positions[i * 3 + 0] = sinPhi * Math.cos(theta);
+    positions[i * 3 + 1] = sinPhi * Math.sin(theta);
+    positions[i * 3 + 2] = Math.cos(phi);
+
+    phases[i] = seededVal(3000 + i * 11) * Math.PI * 2.0;
+    sizes[i] = 0.5 + seededVal(4000 + i * 13) * 1.5;
+
+    // Random orbit axis
+    const ax = new THREE.Vector3(
+      seededVal(5000 + i)-0.5, 
+      seededVal(6000 + i)-0.5, 
+      seededVal(7000 + i)-0.5
+    ).normalize();
+    axes[i * 3 + 0] = ax.x;
+    axes[i * 3 + 1] = ax.y;
+    axes[i * 3 + 2] = ax.z;
+  }
+
+  swarmGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  swarmGeo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  swarmGeo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+  swarmGeo.setAttribute('aAxis', new THREE.BufferAttribute(axes, 3));
+
+  const swarmMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uAudio: { value: 0 },
+      uFocusEase: { value: 0 },
+      uMotif: { value: 0 }
+    },
+    vertexShader: RESIDUE_SWARM_VERT,
+    fragmentShader: RESIDUE_SWARM_FRAG,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: false,
+  });
+
+  const swarm = new THREE.Points(swarmGeo, swarmMat);
+  group.add(swarm);
+
+  return { group, core, swarm, coreMat, swarmMat };
 }
 
 // Build a ribbon BufferGeometry for N path points (2 verts per point)
@@ -969,6 +1344,10 @@ export class SceneManager {
           uRippleAge:    { value: -1.0 },
           uHover:        { value: 0 },
           uCursorPos:    { value: new THREE.Vector2(0.5, 0.5) },
+          uLandingRipple:{ value: 1.0 },
+          uLandingHover: { value: 0.0 },
+          uLandingTap:   { value: -1.0 },
+          uLandingOrigin:{ value: new THREE.Vector2(0.5, 0.5) },
         },
         vertexShader:   PAPER_VERT,
         fragmentShader: PAPER_FRAG,
@@ -988,6 +1367,7 @@ export class SceneManager {
 
     // ── Shared Geometries ──
     this.gemGeo = new THREE.IcosahedronGeometry(1, 1); // Shared, low-poly (20 faces)
+    this.focusResidue = createFocusResidueVisual();
     
     // ── Cluster root ──
     this.clusterRoot = new THREE.Group();
@@ -1024,9 +1404,11 @@ export class SceneManager {
     this.focusBlend       = 0;     // 0→1 smooth transition into focus
     this.focusOriginWorld = new THREE.Vector3(); // stone's original world position
     this.rippleAge        = -1;    // age of paper ripple (-1 = inactive)
+    this.landingTapAge    = -1;
     this.rippleOrigin     = new THREE.Vector2(0.5, 0.5); // UV-space origin
     this.resonancePulses  = [];    // [{ clusterIndex, age }]
     this.ignoreNextStoneClick = false;
+    this.focusReading = null;
 
     this._onStoneClick = () => {
       if (this.ignoreNextStoneClick) {
@@ -1087,14 +1469,17 @@ export class SceneManager {
     this.ignoreNextStoneClick = true;
   }
 
+  triggerLandingRipple() {
+    this.landingTapAge = 0;
+  }
+
   _enterFocus(entry) {
     this.releasingStone = null;
     this.focusedStone = entry;
     const wp = new THREE.Vector3();
     entry.mesh.getWorldPosition(wp);
     this.focusOriginWorld.copy(wp);
-    wp.project(this.camera);
-    this.rippleOrigin.set((wp.x + 1) * 0.5, (wp.y + 1) * 0.5);
+    this.rippleOrigin.set((wp.x + 50) / 100, (wp.y + 50) / 100);
     this.rippleAge = 0;
     this.resonancePulses.push({ clusterIndex: entry.clusterIndex, age: 0 });
 
@@ -1127,6 +1512,15 @@ export class SceneManager {
   }
 
   clearScene() {
+    this.focusedStone = null;
+    this.releasingStone = null;
+    this.focusBlend = 0;
+    this.focusReading = null;
+    if (this.focusResidue.group.parent) {
+      this.focusResidue.group.parent.remove(this.focusResidue.group);
+    }
+    this.focusResidue.group.visible = false;
+
     this.cubes.forEach(({mesh}) => {
       mesh.geometry.dispose();
       mesh.material.dispose();
@@ -1239,9 +1633,12 @@ export class SceneManager {
           mesh,
           key: entry.key || "•",
           baseScale: radius,
+          baseOpacity: opacity,
           currentDisplayScale: 0,
           basePos: pos.clone(),
           clusterIndex: ci,
+          localIndex: ki,
+          clusterSize: (cluster.keys || []).length,
           appearAt: ci*0.36 + ki*0.055,
           driftOffset: seededVal(seed+40) * Math.PI * 2,
           swimPhaseA: seededVal(seed + 50) * Math.PI * 2,
@@ -1318,6 +1715,16 @@ export class SceneManager {
 
   initBeginCube(callback) {
     this._beginCallback = callback;
+    this.beginCubeExiting = false;
+    this.beginCubeEntrance = 0;
+    this.beginCubeDisp = 0;
+    this.beginCubeHovered = false;
+    if (this.beginCube) {
+      this.beginCube.geometry.dispose();
+      this.beginCube.material.dispose();
+      this.scene.remove(this.beginCube);
+      this.beginCube = null;
+    }
     const geo = new THREE.IcosahedronGeometry(0.38, 3);
     const mat = new THREE.ShaderMaterial({
       uniforms: {
@@ -1352,6 +1759,14 @@ export class SceneManager {
   }
 
   setPlaybackState(isPlaying) { this.isPlaying = isPlaying; }
+
+  setFocusReading(reading) {
+    this.focusReading = reading;
+  }
+
+  getActiveFocusEntry() {
+    return this.focusedStone || this.releasingStone || null;
+  }
   setAudioLevel(level)        { this.audioLevel = level; }
 
   onResize() {
@@ -1365,6 +1780,10 @@ export class SceneManager {
   animate() {
     this._req = requestAnimationFrame(() => this.animate());
     this.themeBlend = THREE.MathUtils.lerp(this.themeBlend, this.themeTarget, 0.06);
+    const elapsed = this.clock.getElapsedTime();
+    const dt = Math.min(this.clock.getDelta(), 0.1);
+    const buildTime = elapsed - this.buildStartAt;
+    const wp = new THREE.Vector3();
 
     this.paperPlane.material.uniforms.uTheme.value = this.themeBlend;
     this.cubes.forEach(c => {
@@ -1395,13 +1814,84 @@ export class SceneManager {
       this.releasingStone = null;
     }
     const focusEase = this.focusBlend * this.focusBlend * (3.0 - 2.0 * this.focusBlend);
+    const activeFocusEntry = this.getActiveFocusEntry();
+
+    if (activeFocusEntry && this.focusReading && this.focusBlend > 0.02) {
+      const residue = this.focusResidue;
+      if (residue.group.parent !== activeFocusEntry.mesh) {
+        residue.group.parent?.remove(residue.group);
+        activeFocusEntry.mesh.add(residue.group);
+      }
+
+      residue.group.visible = true;
+      residue.group.position.set(0, 0, 0);
+      residue.group.scale.setScalar(1.2 + focusEase * 0.4);
+      residue.group.rotation.y += 0.004 + this.smoothAudio * 0.0022;
+      residue.group.rotation.z = Math.sin(elapsed * 0.18) * 0.05 * focusEase;
+
+      const motifStr = this.focusReading.motif || "restless";
+      let uMotifVal = 0.0;
+      if (motifStr === "hesitation") uMotifVal = 1.0;
+      else if (motifStr === "settling") uMotifVal = 2.0;
+      else if (motifStr === "aftershock") uMotifVal = 3.0;
+      else if (motifStr === "tension") uMotifVal = 4.0;
+      else if (motifStr === "scatter") uMotifVal = 5.0;
+
+      residue.coreMat.uniforms.uTime.value = elapsed;
+      residue.coreMat.uniforms.uAudio.value = this.smoothAudio;
+      residue.coreMat.uniforms.uFocusEase.value = focusEase;
+      residue.coreMat.uniforms.uMotif.value = uMotifVal;
+
+      residue.swarmMat.uniforms.uTime.value = elapsed;
+      residue.swarmMat.uniforms.uAudio.value = this.smoothAudio;
+      residue.swarmMat.uniforms.uFocusEase.value = focusEase;
+      residue.swarmMat.uniforms.uMotif.value = uMotifVal;
+
+    } else {
+      this.focusResidue.group.visible = false;
+      if (this.focusResidue.group.parent && this.focusResidue.group.parent !== this.scene) {
+        this.focusResidue.group.parent.remove(this.focusResidue.group);
+      }
+    }
 
     if (this.rippleAge >= 0) {
       this.rippleAge += 0.016;
-      if (this.rippleAge > 4.0) this.rippleAge = -1;
+      if (this.rippleAge > 6.0) this.rippleAge = -1;
     }
     this.paperPlane.material.uniforms.uRippleAge.value = this.rippleAge;
     this.paperPlane.material.uniforms.uRippleOrigin.value.copy(this.rippleOrigin);
+
+    this.paperPlane.material.uniforms.uLandingRipple.value = THREE.MathUtils.lerp(
+      this.paperPlane.material.uniforms.uLandingRipple.value,
+      this.beginCubeExiting ? 0.0 : 1.0,
+      0.03
+    );
+    this.paperPlane.material.uniforms.uLandingHover.value = THREE.MathUtils.lerp(
+      this.paperPlane.material.uniforms.uLandingHover.value,
+      this.beginCubeHovered && !this.beginCubeExiting ? 1.0 : 0.0,
+      0.08
+    );
+    if (this.landingTapAge >= 0) {
+      this.landingTapAge += 0.016;
+      if (this.landingTapAge > 6.0) this.landingTapAge = -1;
+    }
+    this.paperPlane.material.uniforms.uLandingTap.value = this.landingTapAge;
+
+    // Perspectively project the Begin Stone's world position onto the Paper Plane UVs
+    if (this.beginCube && this.camera) {
+      const stoneWorld = new THREE.Vector3();
+      this.beginCube.getWorldPosition(stoneWorld);
+      const rayDir = new THREE.Vector3().subVectors(stoneWorld, this.camera.position).normalize();
+      if (Math.abs(rayDir.z) > 0.0001) {
+        const t = (-5.0 - this.camera.position.z) / rayDir.z; // Paper plane is at z = -5
+        const hitX = this.camera.position.x + rayDir.x * t;
+        const hitY = this.camera.position.y + rayDir.y * t;
+        this.paperPlane.material.uniforms.uLandingOrigin.value.set(
+          (hitX / 100.0) + 0.5,
+          (hitY / 100.0) + 0.5
+        );
+      }
+    }
 
     this.resonancePulses = this.resonancePulses.filter(p => {
       p.age += 0.016;
@@ -1417,23 +1907,32 @@ export class SceneManager {
     const dimFactor = 1.0 - this.focusBlend * 0.15;
     this.paperPlane.material.uniforms.uAudio.value = this.smoothAudio * dimFactor;
 
-    const elapsed = this.clock.getElapsedTime();
-    const dt = Math.min(this.clock.getDelta(), 0.1);
-    const buildTime = elapsed - this.buildStartAt;
-    const wp = new THREE.Vector3();
-
-    const camTargetZ = this.isPlaying ? 18.0 : 10.0;
-    this.targetCameraZ = THREE.MathUtils.lerp(this.targetCameraZ, camTargetZ, 0.05);
-    this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, this.targetCameraZ, 0.03);
-    this.camera.position.y = 0.8 + Math.sin(elapsed * 0.4) * 0.15;
-    this.camera.position.x = Math.cos(elapsed * 0.3) * 0.1;
-    this.camera.lookAt(0, 0, 0);
-
     this.playbackBlend = THREE.MathUtils.lerp(
       this.playbackBlend,
       this.isPlaying ? 1.0 : 0.0,
       0.012,
     );
+
+    const pbFast = this.playbackBlend * this.playbackBlend * (3.0 - 2.0 * this.playbackBlend);
+
+    // Unbind time from pbFast so the camera never rewinds backward on stop
+    const camOrbitAngle = elapsed * 0.15;
+    const camXRadius = 8.0 * pbFast;
+    
+    const baseCamX = Math.cos(elapsed * 0.3) * 0.1;
+    const baseCamY = 0.8 + Math.sin(elapsed * 0.4) * 0.15;
+    const baseCamZ = 10.0;
+    
+    const targetCamX = baseCamX * (1.0 - pbFast) + Math.sin(camOrbitAngle) * camXRadius;
+    const targetCamZ = baseCamZ + (16.0 - baseCamZ) * pbFast + Math.cos(camOrbitAngle) * camXRadius * 0.3 * pbFast;
+    const targetCamY = baseCamY + pbFast * 1.5;
+    
+    // Tight lerp to track the smooth pbFast curve identically across all axes
+    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, 0.08);
+    this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetCamZ, 0.08);
+    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetCamY, 0.08);
+    
+    this.camera.lookAt(0, pbFast * 1.5, 0);
 
     this.smoothAudio = THREE.MathUtils.lerp(this.smoothAudio, this.audioLevel, 0.018);
 
@@ -1651,11 +2150,13 @@ export class SceneManager {
 
     let _nearestDist = Infinity;
     let _nearestLabel = null;
+    let _activeClusterIndex = this.focusedStone?.clusterIndex ?? this.releasingStone?.clusterIndex ?? null;
     const hoveredStones = [];
     const hoveredBranchStones = [];
 
     this.cubes.forEach(entry => {
       const {mesh} = entry;
+      const isFocused = entry === this.focusedStone || entry === this.releasingStone;
       entry.hoverProximity = 0;
       mesh.material.uniforms.uTime.value = elapsed;
       mesh.material.uniforms.uAudio.value = this.smoothAudio;
@@ -1672,7 +2173,6 @@ export class SceneManager {
         }
 
         let target;
-        const isFocused = entry === this.focusedStone || entry === this.releasingStone;
         if (isFocused && this.focusBlend > 0.01) {
           const restScale = THREE.MathUtils.lerp(MINI_SCALE, entry.baseScale, proximity * proximity * (3 - 2 * proximity));
           target = THREE.MathUtils.lerp(restScale, entry.baseScale * 2.5, focusEase);
@@ -1707,6 +2207,16 @@ export class SceneManager {
         entry.currentDisplayScale = THREE.MathUtils.lerp(entry.currentDisplayScale, target, 0.08);
       }
       mesh.scale.setScalar(Math.max(0.001, entry.currentDisplayScale));
+      const shellOpacityTarget = isFocused && this.focusBlend > 0.01
+        ? THREE.MathUtils.lerp(entry.baseOpacity, Math.max(0.34, entry.baseOpacity * 0.56), focusEase)
+        : (this.focusBlend > 0.01 && !isFocused
+            ? THREE.MathUtils.lerp(entry.baseOpacity, entry.baseOpacity * 0.72, focusEase)
+            : entry.baseOpacity);
+      mesh.material.uniforms.uOpacity.value = THREE.MathUtils.lerp(
+        mesh.material.uniforms.uOpacity.value,
+        shellOpacityTarget,
+        0.08,
+      );
       mesh.material.uniforms.uHover.value = THREE.MathUtils.lerp(
         mesh.material.uniforms.uHover.value,
         Math.pow(entry.hoverProximity, 1.6) * 0.9,
@@ -1721,14 +2231,23 @@ export class SceneManager {
       let posY = entry.basePos.y + Math.sin(elapsed * orbitSpeed + entry.driftOffset) * orbitRadius;
       let posZ = entry.basePos.z + Math.cos(elapsed * orbitSpeed * 1.4 + entry.driftOffset) * amp * 0.3;
 
-      const isFocused = entry === this.focusedStone || entry === this.releasingStone;
       if (isFocused && this.focusBlend > 0.01) {
+        const vCamPos = this.camera.position.clone();
+        const vCamDir = new THREE.Vector3();
+        this.camera.getWorldDirection(vCamDir);
+        
+        // Ideal world position: 4.5 units directly in front of the camera lens
+        const idealWorld = vCamPos.add(vCamDir.multiplyScalar(4.5));
+        
+        // Convert to local space of the stone's parent group
         const group = this.clusterRoot.children[entry.clusterIndex];
-        const groupPos = group ? group.position : new THREE.Vector3();
-        const targetLocal = new THREE.Vector3(-groupPos.x, -groupPos.y, 2);
-        posX = THREE.MathUtils.lerp(posX, targetLocal.x, focusEase);
-        posY = THREE.MathUtils.lerp(posY, targetLocal.y, focusEase);
-        posZ = THREE.MathUtils.lerp(posZ, targetLocal.z, focusEase);
+        if (group) {
+          idealWorld.applyMatrix4(group.matrixWorld.clone().invert());
+        }
+        
+        posX = THREE.MathUtils.lerp(posX, idealWorld.x, focusEase);
+        posY = THREE.MathUtils.lerp(posY, idealWorld.y, focusEase);
+        posZ = THREE.MathUtils.lerp(posZ, idealWorld.z, focusEase);
         mesh.rotation.y += 0.008;
         mesh.rotation.x = Math.sin(elapsed * 0.3) * 0.15 * focusEase;
       }
@@ -1754,14 +2273,32 @@ export class SceneManager {
         mesh.rotation.z = THREE.MathUtils.lerp(mesh.rotation.z, targetRotZ, 0.05);
         mesh.rotation.x = THREE.MathUtils.lerp(mesh.rotation.x, targetRotX, 0.05);
 
-        const audioSwim = 0.42 + this.smoothAudio * 0.72;
-        const swimTime = elapsed * entry.swimSpeed + entry.swimPhaseA;
-        const swimTimeB = elapsed * (entry.swimSpeed * 0.76 + 0.03) + entry.swimPhaseB;
-        const swimRadius = entry.swimRadius * this.playbackBlend * audioSwim;
-        const swimLift = entry.swimLift * this.playbackBlend * (0.95 + this.smoothAudio * 0.85);
-        const swimDriftX = Math.sin(swimTime) * swimRadius + Math.sin(swimTimeB) * swimRadius * 0.6;
-        const swimDriftY = Math.cos(swimTime * 0.82) * swimRadius * 0.9 + Math.sin(swimTimeB * 1.12) * swimRadius * 0.34;
-        const swimDriftZ = Math.sin(swimTime * 0.54 + swimTimeB * 0.3) * swimLift;
+        const audioSwim = 0.42 + this.smoothAudio * 0.8;
+        const t = elapsed * entry.swimSpeed * 0.35 + entry.swimPhaseA;
+        const bX = entry.basePos.x, bY = entry.basePos.y, bZ = entry.basePos.z;
+        
+        let p1X = Math.sin(bX * 0.5 + t) * Math.cos(bY * 0.5 - t) + Math.sin(bZ * 0.5 + t);
+        let p2X = Math.sin(bX * 1.5 - t) * Math.cos(bY * 1.2 + t) + Math.sin(bZ * 1.3 - t);
+        let p3X = Math.sin(bX * 2.5 + t*1.5) * Math.cos(bY * 2.1 - t*1.2) + Math.sin(bZ * 2.2 + t*1.4);
+        const fbmX = p1X + p2X * 0.5 + p3X * 0.25;
+        
+        let p1Y = Math.sin(bX * 0.6 + t + 10) * Math.cos(bY * 0.4 - t + 10) + Math.sin(bZ * 0.7 + t + 10);
+        let p2Y = Math.sin(bX * 1.4 - t + 10) * Math.cos(bY * 1.3 + t + 10) + Math.sin(bZ * 1.1 - t + 10);
+        let p3Y = Math.sin(bX * 2.4 + t*1.5 + 10) * Math.cos(bY * 2.0 - t*1.2 + 10) + Math.sin(bZ * 2.3 + t*1.4 + 10);
+        const fbmY = p1Y + p2Y * 0.5 + p3Y * 0.25;
+        
+        let p1Z = Math.sin(bX * 0.4 + t + 20) * Math.cos(bY * 0.6 - t + 20) + Math.sin(bZ * 0.5 + t + 20);
+        let p2Z = Math.sin(bX * 1.1 - t + 20) * Math.cos(bY * 1.4 + t + 20) + Math.sin(bZ * 1.3 - t + 20);
+        let p3Z = Math.sin(bX * 2.1 + t*1.5 + 20) * Math.cos(bY * 2.3 - t*1.2 + 20) + Math.sin(bZ * 2.0 + t*1.4 + 20);
+        const fbmZ = p1Z + p2Z * 0.5 + p3Z * 0.25;
+
+        const swimRadius = entry.swimRadius * this.playbackBlend * audioSwim * 0.7;
+        const swimLift = entry.swimLift * this.playbackBlend * (0.95 + this.smoothAudio * 0.85) * 0.35;
+        
+        const swimDriftX = fbmX * swimRadius;
+        const swimDriftY = fbmY * swimRadius;
+        const swimDriftZ = fbmZ * swimLift;
+
         mesh.position.x += swimDriftX;
         mesh.position.y += swimDriftY;
         mesh.position.z += swimDriftZ;
@@ -1779,6 +2316,7 @@ export class SceneManager {
         if (labelDist < 0.8 && labelDist < _nearestDist) {
           _nearestDist = labelDist;
           _nearestLabel = entry.key;
+          _activeClusterIndex = entry.clusterIndex;
         }
       }
     });
@@ -1786,6 +2324,17 @@ export class SceneManager {
     this.hoveredStoneLabel = _nearestLabel;
     this.hoveredStones = hoveredStones;
     this.hoveredBranchStones = hoveredBranchStones;
+
+    this.cubes.forEach((entry) => {
+      const auraTarget = _activeClusterIndex !== null && entry.clusterIndex === _activeClusterIndex
+        ? (entry === this.focusedStone || entry === this.releasingStone ? 0.54 : 0.3)
+        : 0.0;
+      entry.mesh.material.uniforms.uClusterAura.value = THREE.MathUtils.lerp(
+        entry.mesh.material.uniforms.uClusterAura.value,
+        auraTarget,
+        0.08,
+      );
+    });
 
     this.clusterRoot.children.forEach((group, i) => {
       const a = this.groupAnchors[i];
@@ -2062,6 +2611,7 @@ export class SceneManager {
               uTheme:     { value: this.themeBlend },
               uSeed:      { value: Math.random() * 100.0 },
               uPlayback:  { value: 0 },
+              uAudio:     { value: 0 },
             },
             vertexShader:   THREAD_VERT,
             fragmentShader: THREAD_FRAG,
@@ -2111,6 +2661,7 @@ export class SceneManager {
           r.mat.uniforms.uTime.value = elapsed;
           r.mat.uniforms.uTheme.value = this.themeBlend;
           r.mat.uniforms.uPlayback.value = this.playbackBlend;
+          r.mat.uniforms.uAudio.value = this.smoothAudio;
 
           const pts = computeSilkThreadPath(p1, p2, elapsed, GRAPH_THREAD_SEGMENTS, r.seed + idx * 0.17);
           updateRibbon(r.geo, pts, width);

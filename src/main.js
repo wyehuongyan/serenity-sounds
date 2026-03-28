@@ -185,6 +185,7 @@ document.addEventListener("mousedown", () => {
 
   if (!isOverlayVisible && sceneManager?.beginCubeHovered) {
     playUiSound(beginPressSound);
+    sceneManager.triggerLandingRipple();
   }
 });
 
@@ -294,6 +295,7 @@ const canvasContainer = document.querySelector("#canvas-container");
 const phaseLanding = document.querySelector("#phase-landing");
 const beginBtn = document.querySelector("#begin-btn");
 const signupLink = document.querySelector("#signup-link");
+const returnHomeLink = document.querySelector("#return-home-link");
 const phaseInput = document.querySelector("#phase-input");
 const mashInput = document.querySelector("#mash-input");
 const mashProgressFill = document.querySelector("#mash-progress-fill");
@@ -394,6 +396,10 @@ if (brandTitle) {
   });
 }
 const playerBar = document.querySelector("#player-bar"); 
+const focusReading = document.querySelector("#focus-reading");
+const focusReadingRole = document.querySelector("#focus-reading-role");
+const focusReadingEmotion = document.querySelector("#focus-reading-emotion");
+const focusReadingLine = document.querySelector("#focus-reading-line");
 const playPauseBtn = document.querySelector("#play-pause-btn");
 const playIcon = document.querySelector("#play-icon");
 const pauseIcon = document.querySelector("#pause-icon");
@@ -472,6 +478,9 @@ let generateAllowed = false;
 let uploadedImagePalette = [];
 let uploadedImageUrl = null;
 let desktopMashCursorHintVisible = false;
+let focusReadingMap = new Map();
+const PHASE_TRANSITION_MS = 920;
+const PHASE_OVERLAP_MS = 140;
 
 if (touchMashMode) {
   phaseInput?.classList.add("touch-mash-mode");
@@ -526,6 +535,187 @@ function colorDistance(a, b) {
   const dg = a.g - b.g;
   const db = a.b - b.b;
   return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+function getStoneReadingKey(clusterIndex, localIndex) {
+  return `${clusterIndex}:${localIndex}`;
+}
+
+function computeClusterSpread(cluster) {
+  const keys = cluster?.keys || [];
+  if (!keys.length) return 0;
+  const center = {
+    x: keys.reduce((sum, entry) => sum + (entry.horizontal || 0), 0) / keys.length,
+    y: keys.reduce((sum, entry) => sum + (entry.vertical || 0), 0) / keys.length,
+  };
+
+  return keys.reduce((maxSpread, entry) => {
+    const dx = (entry.horizontal || 0) - center.x;
+    const dy = (entry.vertical || 0) - center.y;
+    return Math.max(maxSpread, Math.sqrt(dx * dx + dy * dy));
+  }, 0);
+}
+
+function classifyClusterReading(cluster, analysis) {
+  const size = cluster.size || cluster.keys?.length || 0;
+  const spread = computeClusterSpread(cluster);
+  const fast = (cluster.averageVelocity || analysis.averageVelocity || 0) < 125;
+  const slow = (cluster.averageVelocity || analysis.averageVelocity || 0) > 220;
+  const jagged = (analysis.rhythmVariance || 0) > 6000;
+  const wide = spread > 0.72;
+  const leftHeavy = (cluster.averageHorizontal || 0) < -0.22;
+  const rightHeavy = (cluster.averageHorizontal || 0) > 0.22;
+  const totalClusters = Math.max(analysis.clusters?.length || 1, 1);
+  const phase = totalClusters === 1 ? 0.5 : cluster.index / (totalClusters - 1);
+
+  if (phase > 0.7 && fast && size >= 4) {
+    return { emotion: "you came back to this feeling here", motif: "aftershock" };
+  }
+  if (fast && jagged && wide) {
+    return { emotion: "this part scattered before it found its shape", motif: "scatter" };
+  }
+  if (fast && size >= 5) {
+    return { emotion: "you pushed hardest here, then let it ease", motif: "tension" };
+  }
+  if (slow && size <= 3) {
+    return { emotion: "this part came in carefully", motif: "hesitation" };
+  }
+  if (leftHeavy && jagged) {
+    return { emotion: "you were still holding on here", motif: "tension" };
+  }
+  if (rightHeavy && !jagged) {
+    return { emotion: "this part felt heavier, but more steady", motif: "settling" };
+  }
+  if (phase < 0.35 && size >= 4) {
+    return { emotion: "this restless part finally started to soften", motif: "restless" };
+  }
+  if (phase > 0.65) {
+    return { emotion: "this one stayed with you for longer", motif: "settling" };
+  }
+  if (wide) {
+    return { emotion: "the strain started to spread out here", motif: "scatter" };
+  }
+  return { emotion: "the sharp edge softened here", motif: "restless" };
+}
+
+function roleForStone(localIndex, clusterSize) {
+  if (clusterSize <= 1) return "core fragment";
+  if (localIndex === 0) return "first pulse";
+  if (localIndex === clusterSize - 1) return "aftershock";
+  if (localIndex === Math.floor(clusterSize / 2)) return "core fragment";
+  if (localIndex <= Math.floor(clusterSize / 3)) return "surge";
+  if (localIndex >= Math.ceil(clusterSize * 0.7)) return "linger";
+  return localIndex % 2 === 0 ? "hinge" : "quiet edge";
+}
+
+function lineForStone(role, emotion, cluster, analysis, localIndex) {
+  const size = cluster.size || cluster.keys?.length || 0;
+  const avgVelocity = cluster.averageVelocity || analysis.averageVelocity || 180;
+  const spread = computeClusterSpread(cluster);
+  const leftRight = cluster.averageHorizontal || 0;
+
+  if (role === "first pulse") {
+    return avgVelocity < 130
+      ? "This is where it first spilled out."
+      : "This is where it first started to gather.";
+  }
+  if (role === "aftershock") {
+    return avgVelocity < 150
+      ? "This came after the first rush had already passed."
+      : "This held on even after the rest had softened.";
+  }
+  if (role === "core fragment") {
+    if (size >= 5) return "You pushed hardest here.";
+    return "This is the part that carried most of the weight.";
+  }
+  if (role === "surge") {
+    return spread > 0.7
+      ? "The energy spread out here before it could settle."
+      : "This part leaned forward more than the rest.";
+  }
+  if (role === "linger") {
+    return "This part was quieter, but it stayed with you longer.";
+  }
+  if (role === "hinge") {
+    return leftRight < -0.15
+      ? "This is where it began folding back in."
+      : "This is where the feeling started to turn.";
+  }
+  if (emotion === "this one stayed with you for longer") {
+    return "It stayed with you quietly, even after the sharper part had gone.";
+  }
+  return localIndex % 2 === 0
+    ? "This part was lighter, but it still shaped the whole thing."
+    : "Its force was smaller, but it helped the rest calm down.";
+}
+
+function buildFocusReadings(analysis) {
+  const readings = new Map();
+
+  (analysis.clusters || []).forEach((cluster) => {
+    const reading = classifyClusterReading(cluster, analysis);
+    const keys = cluster.keys || [];
+    const clusterSize = keys.length || cluster.size || 0;
+    const primaryIndices = new Set([
+      0,
+      Math.max(0, clusterSize - 1),
+      Math.floor(clusterSize / 2),
+    ]);
+
+    keys.forEach((entry, localIndex) => {
+      const role = roleForStone(localIndex, clusterSize);
+      const isPrimary = primaryIndices.has(localIndex);
+      readings.set(
+        getStoneReadingKey(cluster.index, localIndex),
+        {
+          role,
+          emotion: reading.emotion,
+          motif: reading.motif,
+          line: isPrimary ? lineForStone(role, reading.emotion, cluster, analysis, localIndex) : "",
+        },
+      );
+    });
+  });
+
+  return readings;
+}
+
+function updateFocusReadingOverlay() {
+  if (!focusReading || !focusReadingRole || !focusReadingEmotion || !focusReadingLine) {
+    return;
+  }
+
+  const focusedEntry = sceneManager.getActiveFocusEntry?.() || null;
+  const focusVisible = !isOverlayVisible && focusedEntry && sceneManager.focusBlend > 0.025;
+
+  if (!focusVisible) {
+    focusReading.style.opacity = "";
+    focusReading.classList.add("hidden");
+    focusReading.classList.remove("is-visible");
+    sceneManager.setFocusReading?.(null);
+    return;
+  }
+
+  const reading = focusReadingMap.get(
+    getStoneReadingKey(focusedEntry.clusterIndex, focusedEntry.localIndex),
+  );
+
+  if (!reading) {
+    focusReading.style.opacity = "";
+    focusReading.classList.add("hidden");
+    focusReading.classList.remove("is-visible");
+    sceneManager.setFocusReading?.(null);
+    return;
+  }
+
+  focusReading.classList.remove("hidden");
+  focusReadingRole.textContent = reading.role;
+  focusReadingEmotion.textContent = reading.emotion;
+  focusReadingLine.textContent = reading.line || "";
+  focusReadingLine.style.display = reading.line ? "block" : "none";
+  focusReading.style.opacity = String(Math.max(0, Math.min(1, sceneManager.focusBlend * 1.15)));
+  focusReading.classList.add("is-visible");
+  sceneManager.setFocusReading?.(reading);
 }
 
 function quantizeChannel(value) {
@@ -736,31 +926,37 @@ function syncPlayerDuration() {
 function fadeIn(el, delayMs = 0) {
   el.classList.remove("hidden");
   el.getBoundingClientRect(); // reflow
-  setTimeout(() => el.classList.add("is-visible"), delayMs);
+  window.setTimeout(() => {
+    requestAnimationFrame(() => el.classList.add("is-visible"));
+  }, delayMs);
 }
 
 // Fade an overlay out: remove is-visible, then hide after transition
 function fadeOut(el, durationMs = 500, onDone) {
   el.classList.remove("is-visible");
-  setTimeout(() => {
+  window.setTimeout(() => {
     el.classList.add("hidden");
     onDone?.();
   }, durationMs);
 }
 
+function initBeginPhase() {
+  sceneManager.initBeginCube(() => {
+    musicGenerator.resume(); // Fix browser audio policy
+    desktopMashCursorHintVisible = !touchMashMode;
+    fadeIn(phaseInput, PHASE_OVERLAP_MS);
+    fadeOut(phaseLanding, PHASE_TRANSITION_MS, () => {
+      fadeIn(historyToggle, 220);
+      fadeIn(themeToggle, 220); // Show theme toggle here
+      focusMashInput();
+    });
+  });
+}
+
 // ─── Landing → Input ───
 
 // Begin cube in Three.js replaces the HTML button
-sceneManager.initBeginCube(() => {
-  musicGenerator.resume(); // Fix browser audio policy
-  fadeOut(phaseLanding, 600, () => {
-    fadeIn(phaseInput);
-    fadeIn(historyToggle, 200);
-    fadeIn(themeToggle, 200); // Show theme toggle here
-    desktopMashCursorHintVisible = !touchMashMode;
-    focusMashInput();
-  });
-});
+initBeginPhase();
 
 // Keep HTML button as a no-op fallback (hidden via CSS)
 beginBtn.addEventListener("click", () => {
@@ -851,6 +1047,7 @@ async function generateComposition() {
   phaseInput.style.pointerEvents = "none";
 
   currentAnalysis = analyzeInput(snapshot);
+  focusReadingMap = buildFocusReadings(currentAnalysis);
   currentMoodParameters = applyUploadedPaletteInfluence(
     mapToMoodParameters(currentAnalysis),
   );
@@ -860,7 +1057,7 @@ async function generateComposition() {
   syncPlayerDuration();
   stopMashDripSound();
 
-  fadeOut(phaseInput, 500, () => {
+  fadeOut(phaseInput, PHASE_TRANSITION_MS, () => {
     phaseInput.style.opacity = "";
     phaseInput.style.transition = "";
     phaseInput.style.pointerEvents = "";
@@ -868,9 +1065,9 @@ async function generateComposition() {
 
   window.clearTimeout(buildReadyTimeoutId);
   buildReadyTimeoutId = window.setTimeout(() => {
-    fadeIn(playerBar);
+    fadeIn(playerBar, 120);
     saveToHistory(currentMoodParameters, currentAnalysis);
-  }, buildDuration * 1000 + 300);
+  }, buildDuration * 1000 + 420);
 }
 
 // ─── Playback ───
@@ -906,6 +1103,7 @@ function resetExperience() {
 
   currentAnalysis = null;
   currentMoodParameters = null;
+  focusReadingMap = new Map();
   hintDismissed = false;
   generateAllowed = false;
   desktopMashCursorHintVisible = !touchMashMode;
@@ -925,6 +1123,8 @@ function resetExperience() {
   generateBtn.classList.remove("is-visible");
   mashSurfaceLabel?.classList.remove("hidden", "fade-out");
   updateMashProgress(0);
+  focusReading?.classList.add("hidden");
+  focusReading?.classList.remove("is-visible");
 
   progressFill.style.width = "0%";
   playheadEl.style.left = "0%";
@@ -934,15 +1134,76 @@ function resetExperience() {
   setPlayIcons(false);
   resetBtn.classList.add("hidden");
 
-  fadeOut(playerBar, 400, () => {
+  fadeOut(playerBar, 560, () => {
     playerBar.classList.remove("is-visible");
     phaseInput.style.opacity = "";
     phaseInput.style.pointerEvents = "";
     phaseInput.style.transition = "";
-    fadeIn(phaseInput);
+    fadeIn(phaseInput, PHASE_OVERLAP_MS);
     focusMashInput();
   });
 }
+
+function returnHome() {
+  window.clearTimeout(buildReadyTimeoutId);
+  stopMashDripSound(true);
+  musicGenerator.stop();
+  sceneManager.setPlaybackState(false);
+  sceneManager.setAudioLevel(0);
+
+  currentAnalysis = null;
+  currentMoodParameters = null;
+  focusReadingMap = new Map();
+  hintDismissed = false;
+  generateAllowed = false;
+  desktopMashCursorHintVisible = false;
+  activeMashCapture.reset();
+
+  if (uploadedImageUrl) {
+    URL.revokeObjectURL(uploadedImageUrl);
+    uploadedImageUrl = null;
+  }
+  uploadedImagePalette = [];
+  uploadBtn.style.backgroundImage = "";
+  uploadBtn.classList.remove("has-image");
+  imageUploadInput.value = "";
+  renderUploadPalette([]);
+
+  generateBtn.classList.remove("is-visible");
+  updateMashProgress(0);
+  focusReading?.classList.add("hidden");
+  focusReading?.classList.remove("is-visible");
+  phaseInput.style.opacity = "";
+  phaseInput.style.pointerEvents = "";
+  phaseInput.style.transition = "";
+
+  progressFill.style.width = "0%";
+  playheadEl.style.left = "0%";
+  playheadEl.classList.remove("is-active");
+  timeCurrent.textContent = "0:00";
+  timeTotal.textContent = "0:00";
+  setPlayIcons(false);
+  resetBtn.classList.add("hidden");
+
+  closeHistoryDrawer();
+  fadeOut(playerBar, 560);
+  fadeOut(historyToggle, 420);
+  fadeOut(returnHomeLink, 420, () => {
+    phaseLanding.classList.remove("hidden");
+    fadeIn(phaseLanding, 60);
+    phaseInput.classList.add("hidden");
+    phaseInput.classList.remove("is-visible");
+    window.setTimeout(() => {
+      sceneManager.clearScene();
+      initBeginPhase();
+    }, 180);
+  });
+}
+
+returnHomeLink?.addEventListener("click", () => {
+  sceneManager.suppressStoneClickOnce();
+  returnHome();
+});
 
 // ─── History ───
 
@@ -1037,6 +1298,7 @@ async function replaySession(session) {
   stopMashDripSound(true);
   currentMoodParameters = session.moodParameters;
   currentAnalysis = session.analysis || null;
+  focusReadingMap = currentAnalysis ? buildFocusReadings(currentAnalysis) : new Map();
   musicGenerator.loadComposition(currentMoodParameters);
   syncPlayerDuration();
 
@@ -1053,8 +1315,10 @@ async function replaySession(session) {
   if (timeCurrent) timeCurrent.textContent = "0:00";
   setPlayIcons(false);
 
-  phaseInput.classList.add("hidden");
-  fadeIn(playerBar);
+  if (!phaseInput.classList.contains("hidden")) {
+    fadeOut(phaseInput, PHASE_TRANSITION_MS);
+  }
+  fadeIn(playerBar, 120);
   sceneManager.setPlaybackState(false);
 
   try {
@@ -1141,6 +1405,29 @@ function tick() {
       playerBar.classList.add("is-visible");
     }
   }
+
+  if (returnHomeLink) {
+    if (
+      !isOverlayVisible &&
+      currentAnalysis &&
+      phaseInput.classList.contains("hidden") &&
+      phaseLanding.classList.contains("hidden")
+    ) {
+      returnHomeLink.classList.remove("hidden");
+      returnHomeLink.classList.add("is-visible");
+    } else {
+      returnHomeLink.classList.remove("is-visible");
+      if (!returnHomeLink.classList.contains("hidden")) {
+        window.setTimeout(() => {
+          if (!returnHomeLink.classList.contains("is-visible")) {
+            returnHomeLink.classList.add("hidden");
+          }
+        }, 320);
+      }
+    }
+  }
+
+  updateFocusReadingOverlay();
 
   requestAnimationFrame(tick);
 }
