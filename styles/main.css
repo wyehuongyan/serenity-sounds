@@ -44,6 +44,7 @@ body {
   overflow: hidden;
   background: var(--bg);
   cursor: none;
+  overscroll-behavior: none;
 }
 
 body {
@@ -163,6 +164,13 @@ body {
   transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.tap-to-begin-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
 .tap-to-begin.hidden {
   opacity: 0;
   visibility: hidden;
@@ -178,6 +186,18 @@ body {
   color: var(--text); /* Use main text color for maximum visibility */
   user-select: none;
   animation: tap-fade-in 1.5s ease-out;
+}
+
+.tap-to-begin-subtext {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.56rem;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.72;
+  user-select: none;
+  animation: tap-fade-in 1.7s ease-out;
 }
 
 @keyframes tap-fade-in {
@@ -249,12 +269,14 @@ input {
   position: fixed;
   inset: 0;
   z-index: 0;
+  touch-action: none;
 }
 
 #canvas-container canvas {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
 }
 
 /* ─── Overlays ─── */

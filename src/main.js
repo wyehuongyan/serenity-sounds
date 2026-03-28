@@ -173,6 +173,24 @@ document.addEventListener("pointermove", (event) => {
   syncVisualPointer(event.clientX, event.clientY, event.target instanceof Element ? event.target : null);
 });
 
+document.addEventListener("touchmove", (event) => {
+  if (!touchMashMode) {
+    return;
+  }
+
+  const target = event.target;
+  if (
+    target instanceof Element &&
+    target.closest(
+      "button, input, a, #signup-modal, .history-drawer, .history-list, .modal-content",
+    )
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+}, { passive: false });
+
 // Click state — burst animation, then reset
 document.addEventListener("mousedown", () => {
   ensureAudioPrimed();
