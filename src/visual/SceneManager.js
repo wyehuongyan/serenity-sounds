@@ -374,6 +374,9 @@ const CUBE_VERT = /* glsl */`
 
 const CUBE_FRAG = /* glsl */`
   uniform vec3  uInkColor;
+  uniform vec3  uAccentColorA;
+  uniform vec3  uAccentColorB;
+  uniform vec3  uAccentColorC;
   uniform float uOpacity;
   uniform float uTime;
   uniform float uAudio;
@@ -431,17 +434,55 @@ const CUBE_FRAG = /* glsl */`
     float speckleThresh = mix(0.55, 0.65, uTheme);
     float speckles = smoothstep(speckleThresh, speckleThresh + 0.04, fbm(vPos.xyz * 7.0 + uSeed * 3.0 + uTime * 0.3));
     vein = max(vein, speckles * (1.2 + uResonance * 4.0));
+    float accentThreshA = mix(0.41, 0.48, uTheme); // Lowered dark-mode threshold for larger patches
+    float accentNoiseA = fbm(vPos.xyz * 3.2 - uSeed * 1.1 + vec3(2.1, 0.6, 1.4) + uTime * 0.06); 
+    float accentPatchA = smoothstep(accentThreshA, accentThreshA + 0.005, accentNoiseA); 
+    float accentBreakA = smoothstep(0.48, 0.52, fbm(vPos.xyz * 7.2 + uSeed * 3.9 + uTime * 0.03)); 
+    accentPatchA *= accentBreakA;
+
+    float accentThreshB = mix(0.44, 0.53, uTheme); // Lowered dark-mode threshold for larger patches
+    float accentNoiseB = fbm(vPos.xyz * 3.8 + uSeed * 1.7 + vec3(0.7, 2.3, 1.1) - uTime * 0.04);
+    float accentPatchB = smoothstep(accentThreshB, accentThreshB + 0.005, accentNoiseB); 
+    float accentBreakB = smoothstep(0.45, 0.49, fbm(vPos.xyz * 8.4 - uSeed * 3.4 + uTime * 0.025));
+    accentPatchB *= accentBreakB;
+
+    float accentThreshC = mix(0.48, 0.58, uTheme); // Lowered dark-mode threshold for larger patches
+    float accentNoiseC = fbm(vPos.xyz * 4.4 - uSeed * 2.0 + vec3(1.9, 1.1, 2.8) + uTime * 0.05);
+    float accentPatchC = smoothstep(accentThreshC, accentThreshC + 0.005, accentNoiseC); 
+    float accentBreakC = smoothstep(0.46, 0.50, fbm(vPos.xyz * 9.0 + uSeed * 2.8 - uTime * 0.02));
+    accentPatchC *= accentBreakC;
     
     vec3 goldInk = vec3(1.0, 0.88, 0.55);
+    vec3 accentInkALight = uAccentColorA * 0.85 + vec3(0.04, 0.06, 0.08) * uAudio; // Boosted dark-mode intensity + audio glow
+    vec3 accentInkBLight = uAccentColorB * 0.78 + vec3(0.04, 0.06, 0.08) * uAudio;
+    vec3 accentInkCLight = uAccentColorC * 0.72 + vec3(0.04, 0.06, 0.08) * uAudio;
+    vec3 accentInkADark = uAccentColorA * 0.94 + vec3(0.022, 0.018, 0.012);
+    vec3 accentInkBDark = uAccentColorB * 0.94 + vec3(0.022, 0.018, 0.012);
+    vec3 accentInkCDark = uAccentColorC * 0.94 + vec3(0.022, 0.018, 0.012);
+    vec3 accentInkA = mix(accentInkALight, accentInkADark, uTheme);
+    vec3 accentInkB = mix(accentInkBLight, accentInkBDark, uTheme);
+    vec3 accentInkC = mix(accentInkCLight, accentInkCDark, uTheme);
     vec3 finalGlow = mix(internalGlow, goldInk * (1.2 + uTheme * 0.3 + uResonance * 1.8), vein * mix(0.9, 0.85, uTheme)) + goldInk * uResonance * 0.08;
+    float accentPresence = 1.0 - smoothstep(0.58, 0.92, NdotV);
+    float lightModeAccentBoost = 1.0 - uTheme;
+    vec3 pigmentA = mix(accentInkA * 2.4, finalGlow * 0.08 + accentInkA * 1.35, uTheme); // Upped dark-mode multiplier (1.9 -> 2.4)
+    vec3 pigmentB = mix(accentInkB * 2.2, finalGlow * 0.10 + accentInkB * 1.25, uTheme);
+    vec3 pigmentC = mix(accentInkC * 2.0, finalGlow * 0.12 + accentInkC * 1.15, uTheme);
+    finalGlow = mix(finalGlow, pigmentA, accentPatchA * mix(0.98, 0.88, uTheme)); 
+    finalGlow = mix(finalGlow, pigmentB, accentPatchB * mix(0.92, 0.82, uTheme)); 
+    finalGlow = mix(finalGlow, pigmentC, accentPatchC * mix(0.86, 0.78, uTheme)); 
+    finalGlow -= vec3(0.16, 0.145, 0.128) * (accentPatchA * 0.56 + accentPatchB * 0.42 + accentPatchC * 0.34) * accentPresence * (0.9 + lightModeAccentBoost * 0.6);
     
     vec3 skyRef = mix(vec3(0.06, 0.08, 0.12), vec3(0.85, 0.88, 0.92), uTheme);
     float rimHalo = pow(1.0 - NdotV, mix(4.6, 3.0, uTheme));
     vec3 pearlRim = vec3(0.96, 0.93, 0.88) * rimHalo * uTheme * 0.16;
     
-    vec3 hoverTint = mix(vec3(0.28, 0.38, 0.56), vec3(0.96, 0.86, 0.58), uTheme);
+    vec3 accentGlowSeed = (accentInkA + accentInkB + accentInkC) / 3.0;
+    vec3 accentGlow = mix(accentGlowSeed * 0.72 + vec3(0.08, 0.1, 0.14), accentGlowSeed * 1.02 + vec3(0.06, 0.04, 0.0), uTheme);
+    vec3 hoverTint = mix(mix(vec3(0.28, 0.38, 0.56), accentGlow, 0.45), mix(vec3(0.96, 0.86, 0.58), accentGlow, 0.55), uTheme);
     vec3 hoverGlow = hoverTint * rimHalo * uHover * mix(0.22, 0.34, uTheme);
-    vec3 clusterAura = mix(vec3(0.34, 0.46, 0.66), vec3(0.96, 0.86, 0.66), uTheme) * rimHalo * uClusterAura * mix(0.18, 0.28, uTheme);
+    vec3 clusterAuraBase = mix(mix(vec3(0.34, 0.46, 0.66), accentGlow, 0.42), mix(vec3(0.96, 0.86, 0.66), accentGlow, 0.62), uTheme);
+    vec3 clusterAura = clusterAuraBase * rimHalo * uClusterAura * mix(0.18, 0.28, uTheme);
     
     gl_FragColor = vec4(
       clamp(mix(finalGlow, skyRef * 0.15, pow(1.0 - NdotV, mix(6.5, 3.5, uTheme)) * mix(0.4, 0.2, uTheme))
@@ -851,6 +892,9 @@ function createCubeShaderMaterial(inkColor, opacity, seed = 0) {
       uAudio:    { value: 0 }, // Added uAudio
       uSeed:     { value: seed },
       uInkColor: { value: new THREE.Color(inkColor) },
+      uAccentColorA: { value: new THREE.Color(inkColor) },
+      uAccentColorB: { value: new THREE.Color(inkColor) },
+      uAccentColorC: { value: new THREE.Color(inkColor) },
       uOpacity:  { value: opacity },
       uTheme:    { value: 0 },
       uResonance: { value: 0 },
@@ -1645,6 +1689,7 @@ export class SceneManager {
 
     const clusters = analysis.clusters || [];
     const palette  = moodParameters.colorPalette;
+    const imagePalette = moodParameters.imagePalette || palette;
     const trailColor = palette[0] || "#6e685d";
 
     const cursorTrailRibbons = [];
@@ -1704,6 +1749,12 @@ export class SceneManager {
         const opacity = 0.65 + seededVal(seed+20) * 0.28;
 
         const mat  = createCubeShaderMaterial(inkCol, opacity, seededVal(seed) * 10.0);
+        const accentA = imagePalette[(ci + ki) % imagePalette.length] || inkCol;
+        const accentB = imagePalette[(ci + ki + 1) % imagePalette.length] || accentA;
+        const accentC = imagePalette[(ci + ki + 2) % imagePalette.length] || accentB;
+        mat.uniforms.uAccentColorA.value.set(accentA);
+        mat.uniforms.uAccentColorB.value.set(accentB);
+        mat.uniforms.uAccentColorC.value.set(accentC);
         const mesh = new THREE.Mesh(this.gemGeo, mat);
 
         const pos = sunflowerPosition(ki, CUBE_SPACING, seed);
@@ -1786,7 +1837,7 @@ export class SceneManager {
       });
     });
 
-    this.generateGraph(moodParameters.colorPalette);
+    this.generateGraph(moodParameters.colorPalette, moodParameters.imagePalette || moodParameters.colorPalette);
 
     // ── Lightweight Dust Particle Emitter (single draw call) ──
     const DUST_COUNT = this.isMobileRuntime ? 120 : 200;
@@ -2788,7 +2839,7 @@ export class SceneManager {
     this.renderer.render(this.scene, this.camera);
   }
 
-  generateGraph(palette) {
+  generateGraph(palette, accentPalette = palette) {
     if (this.cubes.length < 2) return;
     this.cubes.forEach((cubeA, i) => {
       const neighbors = this.cubes
@@ -2800,7 +2851,9 @@ export class SceneManager {
         const pairId = [i, this.cubes.indexOf(n.cube)].sort().join("-");
         if (this.graphRibbons.some(r => r.id === pairId)) return;
 
-        const inkCol = new THREE.Color("#8f8067");
+        const baseThread = new THREE.Color("#8f8067");
+        const accentThread = new THREE.Color(accentPalette[(i + n.index) % accentPalette.length] || palette[(i + n.index) % palette.length] || "#8f8067");
+        const inkCol = baseThread.lerp(accentThread, 0.32);
         const bundleCount = 1;
         const ribbons = [];
 
