@@ -570,28 +570,19 @@ const RESIDUE_SWARM_FRAG = /* glsl */`
 
 const RIBBON_VERT = /* glsl */`
   varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vWorldPos;
   uniform float uTime;
   uniform float uAudio;
   void main() {
     vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
-    
     vec3 pos = position;
     // Add subtle vertex-level vibration for "aliveness"
     pos.y += sin(uv.x * 12.0 + uTime * 4.0) * 0.005 * uAudio;
-    
-    vec4 wp = modelMatrix * vec4(pos, 1.0);
-    vWorldPos = wp.xyz;
-    gl_Position = projectionMatrix * viewMatrix * wp;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
 
 const RIBBON_FRAG = /* glsl */`
   varying vec2  vUv;
-  varying vec3  vNormal;
-  varying vec3  vWorldPos;
   uniform vec3  uColor;
   uniform float uOpacity;
   uniform float uTime;
@@ -642,18 +633,44 @@ const RIBBON_FRAG = /* glsl */`
 
     vec3 inkCol  = mix(inkColD, inkColL, uTheme);
     
-    // ── Specular Mica / Gold Flakes ──
-    // Lower frequency so flakes are physically larger and survive anti-aliasing
-    float flakeNoise = fbm(vWorldPos * 35.0 + uSeed * 10.0);
+    // ── Specular Mica / Gold Flakes (UV-based, guaranteed visible) ──
+    float flakeNoise = fbm(vec2(vUv.x * 30.0 + uSeed, vUv.y * 20.0 + uSeed * 2.0));
+    float flakeMask = smoothstep(0.64, 0.78, flakeNoise); // Tuned threshold
     
-    // Twinkling intense dielectric flakes (bypassing strict NdotH since ribbons face camera)
-    float flakeTwinkle = sin(uTime * 18.0 + flakeNoise * 40.0);
-    float flakeMask = smoothstep(0.70, 0.95, flakeNoise); // Sparse distribution
-    float spec = flakeMask * max(0.0, flakeTwinkle) * (15.0 + uAudio * 40.0); // Extreme boost
+    // Animated twinkling — flakes blink in and out over time
+    float twinkle = sin(uTime * 10.0 + flakeNoise * 50.0 + uSeed * 7.0);
+    float flakeIntensity = flakeMask * max(0.0, twinkle) * (6.0 + uAudio * 15.0);
     
-    // Flakes are silver/diamond in dark mode, rich gold in light mode
-    vec3 flakeTones = mix(vec3(0.9, 0.95, 1.0), vec3(1.2, 1.0, 0.6), uTheme);
-    inkCol += flakeTones * spec * finalDensity; // Only sparkle where there is ink
+    // Silver in dark mode, rich gold in light mode
+    vec3 flakeColor = mix(vec3(1.0, 1.0, 1.1), vec3(1.4, 1.15, 0.65), uTheme);
+    inkCol += flakeColor * flakeIntensity * finalDensity;
+    
+    // ── Drifting Dust Motes (deterministic grid) ──
+    // Create a grid of cells; each cell spawns one bright dot that drifts over time
+    vec2 driftUv = vUv * vec2(18.0, 6.0) + vec2(-uTime * 0.4, -uTime * 0.6) + uSeed;
+    vec2 cell = floor(driftUv);
+    vec2 local = fract(driftUv);
+    
+    // Hash function for pseudo-random per-cell values
+    float cellHash = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+    float cellHash2 = fract(sin(dot(cell, vec2(269.5, 183.3))) * 43758.5453);
+    
+    // Each cell has a dot at a random position within it
+    vec2 dotPos = vec2(cellHash, cellHash2);
+    float dotDist = length(local - dotPos);
+    
+    // Sharp bright pinpoint (radius ~0.08 in cell space)
+    float dotMask = smoothstep(0.1, 0.02, dotDist);
+    
+    // Lifecycle: each dot fades in and out over time
+    float dotPhase = fract(cellHash * 7.0 + uTime * 0.4);
+    float dotLife = smoothstep(0.0, 0.15, dotPhase) * smoothstep(1.0, 0.7, dotPhase);
+    
+    float mote = dotMask * dotLife * step(0.1, finalDensity);
+    
+    // Bright white/gold that fully overrides the dark ink
+    vec3 moteColor = mix(vec3(1.0, 1.0, 1.05), vec3(1.0, 0.92, 0.6), uTheme);
+    inkCol = mix(inkCol, moteColor, clamp(mote, 0.0, 1.0));
 
     if (alpha < 0.05) discard;
     gl_FragColor = vec4(inkCol, alpha);
@@ -1344,7 +1361,7 @@ export class SceneManager {
           uRippleAge:    { value: -1.0 },
           uHover:        { value: 0 },
           uCursorPos:    { value: new THREE.Vector2(0.5, 0.5) },
-          uLandingRipple:{ value: 1.0 },
+          uLandingRipple:{ value: 0.0 }, // Hidden by default (Tap to Begin Gate)
           uLandingHover: { value: 0.0 },
           uLandingTap:   { value: -1.0 },
           uLandingOrigin:{ value: new THREE.Vector2(0.5, 0.5) },
@@ -1386,6 +1403,7 @@ export class SceneManager {
     this.groupAnchors  = [];
     this.inkStrokes    = [];    // array of Stroke Bundle objects
     this.cursorTrail   = null;
+    this.dustParticles = null;  // lightweight flying dust emitter
     this.buildStartAt  = 0;
     this.buildDuration  = 0;
     this.graphRibbons = []; // network layer
@@ -1548,6 +1566,12 @@ export class SceneManager {
     this.groupAnchors = [];
     this.inkStrokes   = [];
     this.cursorTrail  = null;
+    if (this.dustParticles) {
+      this.dustParticles.geo.dispose();
+      this.dustParticles.mat.dispose();
+      this.scene.remove(this.dustParticles.mesh);
+      this.dustParticles = null;
+    }
     this.graphRibbons.forEach(bundle => {
       bundle.ribbons.forEach(r => {
         r.geo.dispose();
@@ -1556,6 +1580,54 @@ export class SceneManager {
       });
     });
     this.graphRibbons = [];
+    this.splatters.forEach((s) => {
+      this.splatterRoot.remove(s.mesh);
+      s.mesh.geometry.dispose();
+      s.mesh.material.dispose();
+    });
+    this.splatters = [];
+  }
+
+  destroy() {
+    if (this._req) {
+      cancelAnimationFrame(this._req);
+      this._req = null;
+    }
+
+    window.removeEventListener("click", this._onStoneClick);
+    window.removeEventListener("click", this._onBeginClick);
+    window.removeEventListener("resize", this.onResize);
+
+    this.clearScene();
+
+    if (this.beginCube) {
+      this.beginCube.geometry.dispose();
+      this.beginCube.material.dispose();
+      this.scene.remove(this.beginCube);
+      this.beginCube = null;
+    }
+
+    const residue = this.focusResidue;
+    residue.group.parent?.remove(residue.group);
+    residue.arcs.forEach((mesh) => {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    });
+    residue.shards.forEach((mesh) => {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    });
+    residue.motes.forEach((mesh) => {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    });
+    residue.core.geometry.dispose();
+    residue.core.material.dispose();
+
+    this.gemGeo.dispose();
+    this.paperPlane.geometry.dispose();
+    this.paperPlane.material.dispose();
+    this.renderer.dispose();
   }
 
   buildComposition(analysis, moodParameters) {
@@ -1706,6 +1778,59 @@ export class SceneManager {
     });
 
     this.generateGraph(moodParameters.colorPalette);
+
+    // ── Lightweight Dust Particle Emitter (single draw call) ──
+    const DUST_COUNT = 200;
+    const dustPositions = new Float32Array(DUST_COUNT * 3);
+    const dustAlphas = new Float32Array(DUST_COUNT);
+    const dustSizes = new Float32Array(DUST_COUNT);
+    const dustGeo = new THREE.BufferGeometry();
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+    dustGeo.setAttribute('alpha', new THREE.BufferAttribute(dustAlphas, 1));
+    dustGeo.setAttribute('size', new THREE.BufferAttribute(dustSizes, 1));
+    
+    const dustMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTheme: { value: this.themeBlend },
+      },
+      vertexShader: /* glsl */`
+        attribute float alpha;
+        attribute float size;
+        varying float vAlpha;
+        void main() {
+          vAlpha = alpha;
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = size * (20.0 / -mvPos.z); // Boosted size factor
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        varying float vAlpha;
+        uniform float uTheme;
+        void main() {
+          float d = length(gl_PointCoord - vec2(0.5));
+          float disc = smoothstep(0.5, 0.1, d); // Softer edge, brighter core
+          vec3 col = mix(vec3(0.95, 0.98, 1.0), vec3(1.0, 0.95, 0.7), uTheme);
+          gl_FragColor = vec4(col, disc * vAlpha * 1.5); // Boosted alpha
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const dustMesh = new THREE.Points(dustGeo, dustMat);
+    dustMesh.frustumCulled = false;
+    this.scene.add(dustMesh);
+    
+    this.dustParticles = {
+      mesh: dustMesh,
+      geo: dustGeo,
+      mat: dustMat,
+      count: DUST_COUNT,
+      ages: new Float32Array(DUST_COUNT).fill(999), // start all expired
+      velocities: new Array(DUST_COUNT).fill(null).map(() => new THREE.Vector3()),
+      spawnTimer: 0,
+    };
 
     this.buildDuration = this.cubes.length
       ? Math.max(...this.cubes.map(e => e.appearAt)) + 0.9
@@ -1863,7 +1988,7 @@ export class SceneManager {
 
     this.paperPlane.material.uniforms.uLandingRipple.value = THREE.MathUtils.lerp(
       this.paperPlane.material.uniforms.uLandingRipple.value,
-      this.beginCubeExiting ? 0.0 : 1.0,
+      (this.beginCube && !this.beginCubeExiting) ? 1.0 : 0.0,
       0.03
     );
     this.paperPlane.material.uniforms.uLandingHover.value = THREE.MathUtils.lerp(
@@ -2148,6 +2273,64 @@ export class SceneManager {
       });
     }
 
+    // ── Dust Particle Emitter Update ──
+    if (this.dustParticles && this.cursorTrail) {
+      const dust = this.dustParticles;
+      const posArr = dust.geo.attributes.position.array;
+      const alphaArr = dust.geo.attributes.alpha.array;
+      const sizeArr = dust.geo.attributes.size.array;
+      const DUST_LIFETIME = 3.0;
+      
+      dust.mat.uniforms.uTheme.value = this.themeBlend;
+      
+      // Spawn new particles from the trail head
+      dust.spawnTimer += dt;
+      const spawnRate = this.cursorTrail.visibility > 0.1 ? 0.05 : 0.15; // Faster spawning
+      if (dust.spawnTimer > spawnRate) {
+        dust.spawnTimer = 0;
+        // Spawn up to 3 at a time for more volume
+        let spawnedThisFrame = 0;
+        for (let i = 0; i < dust.count && spawnedThisFrame < 3; i++) {
+          if (dust.ages[i] > DUST_LIFETIME) {
+            const head = this.cursorTrail.headWorld;
+            posArr[i * 3]     = head.x + (Math.random() - 0.5) * 0.5;
+            posArr[i * 3 + 1] = head.y + (Math.random() - 0.5) * 0.4;
+            posArr[i * 3 + 2] = head.z + Math.random() * 0.2;
+            dust.ages[i] = 0;
+            dust.velocities[i].set(
+              (Math.random() - 0.5) * 0.25,
+              0.12 + Math.random() * 0.2, // Faster upward drift
+              0.04 + Math.random() * 0.08,
+            );
+            sizeArr[i] = (4.0 + Math.random() * 6.0) * (1.0 + this.audioLevel * 1.5); // Reactive size
+            spawnedThisFrame++;
+          }
+        }
+      }
+      
+      // Age and drift all particles
+      for (let i = 0; i < dust.count; i++) {
+        dust.ages[i] += dt;
+        const life = dust.ages[i] / DUST_LIFETIME;
+        if (life > 1.0) {
+          alphaArr[i] = 0;
+          continue;
+        }
+        // Drift
+        posArr[i * 3]     += dust.velocities[i].x * dt;
+        posArr[i * 3 + 1] += dust.velocities[i].y * dt;
+        posArr[i * 3 + 2] += dust.velocities[i].z * dt;
+        // Fade: quick in, slow out
+        alphaArr[i] = Math.sin(life * Math.PI) * 0.7;
+        // Shrink over lifetime
+        sizeArr[i] *= (1.0 - dt * 0.3);
+      }
+      
+      dust.geo.attributes.position.needsUpdate = true;
+      dust.geo.attributes.alpha.needsUpdate = true;
+      dust.geo.attributes.size.needsUpdate = true;
+    }
+
     let _nearestDist = Infinity;
     let _nearestLabel = null;
     let _activeClusterIndex = this.focusedStone?.clusterIndex ?? this.releasingStone?.clusterIndex ?? null;
@@ -2310,10 +2493,10 @@ export class SceneManager {
         mesh.rotation.z = THREE.MathUtils.lerp(mesh.rotation.z, targetRotZ + swimDriftX * 0.05, 0.04);
       }
       mesh.rotation.y += (entry.rotSpeed || 0.001) + expand*0.006;
-      if (!this.isPlaying && this.cursorActive && !this.focusedStone) {
+      if (this.cursorActive && !this.focusedStone) {
         mesh.getWorldPosition(wp);
         const labelDist = wp.distanceTo(this.cursorWorldSmooth);
-        if (labelDist < 0.8 && labelDist < _nearestDist) {
+        if (labelDist < 1.5 && labelDist < _nearestDist) {
           _nearestDist = labelDist;
           _nearestLabel = entry.key;
           _activeClusterIndex = entry.clusterIndex;

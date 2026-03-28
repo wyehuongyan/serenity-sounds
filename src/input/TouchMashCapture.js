@@ -28,6 +28,14 @@ export class TouchMashCapture {
     this.target.addEventListener("pointercancel", this.onPointerUp);
   }
 
+  destroy() {
+    this.target.removeEventListener("pointerdown", this.onPointerDown);
+    this.target.removeEventListener("pointermove", this.onPointerMove);
+    this.target.removeEventListener("pointerup", this.onPointerUp);
+    this.target.removeEventListener("pointercancel", this.onPointerUp);
+    this.activePointers.clear();
+  }
+
   resolvePosition(event) {
     const bounds = this.target.getBoundingClientRect();
     const nx = clamp01((event.clientX - bounds.left) / Math.max(bounds.width, 1));

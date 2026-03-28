@@ -65,6 +65,10 @@ export class KeyboardCapture {
     this.eventTarget.addEventListener("keydown", this.onKeyDown);
   }
 
+  destroy() {
+    this.eventTarget.removeEventListener("keydown", this.onKeyDown);
+  }
+
   onKeyDown(event) {
     if (typeof this.shouldCapture === "function" && !this.shouldCapture(event)) {
       return;
