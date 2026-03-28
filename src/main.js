@@ -574,33 +574,33 @@ function classifyClusterReading(cluster, analysis) {
   const phase = totalClusters === 1 ? 0.5 : cluster.index / (totalClusters - 1);
 
   if (phase > 0.7 && fast && size >= 4) {
-    return { emotion: "you came back to this feeling here", motif: "aftershock" };
+    return { emotion: "you came back to this here", motif: "aftershock" };
   }
   if (fast && jagged && wide) {
-    return { emotion: "this part scattered before it found its shape", motif: "scatter" };
+    return { emotion: "this part scattered before it could settle", motif: "scatter" };
   }
   if (fast && size >= 5) {
-    return { emotion: "you pushed hardest here, then let it ease", motif: "tension" };
+    return { emotion: "you pushed hardest here, then it began to ease", motif: "tension" };
   }
   if (slow && size <= 3) {
-    return { emotion: "this part came in carefully", motif: "hesitation" };
+    return { emotion: "this part arrived carefully", motif: "hesitation" };
   }
   if (leftHeavy && jagged) {
-    return { emotion: "you were still holding on here", motif: "tension" };
+    return { emotion: "you were still holding something here", motif: "tension" };
   }
   if (rightHeavy && !jagged) {
-    return { emotion: "this part felt heavier, but more steady", motif: "settling" };
+    return { emotion: "this part felt heavier, but steadier", motif: "settling" };
   }
   if (phase < 0.35 && size >= 4) {
-    return { emotion: "this restless part finally started to soften", motif: "restless" };
+    return { emotion: "this restless part started to soften", motif: "restless" };
   }
   if (phase > 0.65) {
-    return { emotion: "this one stayed with you for longer", motif: "settling" };
+    return { emotion: "this one stayed with you longer", motif: "settling" };
   }
   if (wide) {
     return { emotion: "the strain started to spread out here", motif: "scatter" };
   }
-  return { emotion: "the sharp edge softened here", motif: "restless" };
+  return { emotion: "the sharpness softened here", motif: "restless" };
 }
 
 function roleForStone(localIndex, clusterSize) {
@@ -623,7 +623,7 @@ function emotionForStone(baseEmotion, role, cluster, localIndex) {
   }
   if (role === "aftershock") {
     if (baseEmotion.includes("soften")) return "this softened later than the rest";
-    if (baseEmotion.includes("steady")) return "this steadied after everything else had moved through";
+    if (baseEmotion.includes("steady")) return "this settled after everything else had moved through";
     return "you were still carrying this after the first rush";
   }
   if (role === "core fragment") {
@@ -665,7 +665,7 @@ function lineForStone(role, emotion, cluster, analysis, localIndex) {
 
   if (role === "first pulse") {
     return avgVelocity < 130
-      ? "This is where it first spilled out."
+      ? "This is where it first came through."
       : leftRight < -0.12
         ? "This is where it first gathered itself and pushed through."
         : "This is where it first started to gather.";
@@ -679,7 +679,7 @@ function lineForStone(role, emotion, cluster, analysis, localIndex) {
   }
   if (role === "core fragment") {
     if (size >= 5 && avgVelocity < 150) return "You pushed hardest here.";
-    if (vertical > 0.18) return "This sat near the center, but it was lighter on its feet.";
+    if (vertical > 0.18) return "This sat near the center, but it moved more lightly.";
     return "This is the part that carried most of the weight.";
   }
   if (role === "surge") {
@@ -692,7 +692,7 @@ function lineForStone(role, emotion, cluster, analysis, localIndex) {
   if (role === "linger") {
     return closing
       ? "This part was quieter, but it stayed with you longer."
-      : "This part did not ask for much attention, but it stayed.";
+      : "This part asked for less attention, but it stayed.";
   }
   if (role === "hinge") {
     return leftRight < -0.15
@@ -701,17 +701,17 @@ function lineForStone(role, emotion, cluster, analysis, localIndex) {
         ? "This is where the feeling lifted and started to turn."
         : "This is where the feeling started to turn.";
   }
-  if (emotion === "this one stayed with you for longer") {
+  if (emotion === "this one stayed with you longer") {
     return "It stayed with you quietly, even after the sharper part had gone.";
   }
   if (role === "quiet edge") {
     return localIndex % 2 === 0
       ? "This part sat at the edge, but it still shaped the whole thing."
-      : "Its force was smaller, but it kept the rest from feeling alone.";
+      : "Its force was smaller, but it still changed the whole shape.";
   }
   return opening
     ? "This part arrived lightly, but it still changed the shape of everything."
-    : "Its force was smaller, but it helped the rest calm down.";
+    : "Its force was smaller, but it helped the rest settle.";
 }
 
 function buildFocusReadings(analysis) {
