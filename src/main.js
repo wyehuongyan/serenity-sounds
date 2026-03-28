@@ -48,6 +48,7 @@ const sunIcon = document.querySelector("#sun-icon");
 const moonIcon = document.querySelector("#moon-icon");
 const soundOnIcon = document.querySelector("#sound-on-icon");
 const soundOffIcon = document.querySelector("#sound-off-icon");
+// Select inside function for robustness
 
 let isOverlayVisible = false;
 let currentTheme = localStorage.getItem("zen-theme") || "dark";
@@ -195,6 +196,7 @@ cursorRing.addEventListener("animationend", () => cursorRing.classList.remove("i
 // Animate the ring with a lag — runs independently
 // Also picks up 3D begin-cube hover state each frame
 function animateCursor() {
+  if (appDestroyed) return;
   ringX += (dotX - ringX) * 0.14;
   ringY += (dotY - ringY) * 0.14;
   cursorRing.style.left = `${ringX}px`;
@@ -256,7 +258,7 @@ function animateCursor() {
   }
   lastBeginHover = beginHovered;
 
-  requestAnimationFrame(animateCursor);
+  cursorAnimationFrameId = requestAnimationFrame(animateCursor);
 }
 
 // ─── Theme Management ───
@@ -481,6 +483,9 @@ let desktopMashCursorHintVisible = false;
 let focusReadingMap = new Map();
 const PHASE_TRANSITION_MS = 920;
 const PHASE_OVERLAP_MS = 140;
+let cursorAnimationFrameId = null;
+let tickAnimationFrameId = null;
+let appDestroyed = false;
 
 if (touchMashMode) {
   phaseInput?.classList.add("touch-mash-mode");
@@ -953,10 +958,34 @@ function initBeginPhase() {
   });
 }
 
+function showTapToBegin() {
+  const tapToBegin = document.querySelector("#tap-to-begin");
+  if (!tapToBegin) return;
+  
+  tapToBegin.classList.remove("hidden");
+  
+  const onFirstTap = () => {
+    window.removeEventListener("click", onFirstTap);
+    window.removeEventListener("touchstart", onFirstTap);
+    
+    // Resume audio context on user gesture
+    musicGenerator.resume().then(() => {
+      // Small delay for vibe
+      setTimeout(() => {
+        tapToBegin.classList.add("hidden");
+        initBeginPhase();
+      }, 400);
+    });
+  };
+
+  window.addEventListener("click", onFirstTap);
+  window.addEventListener("touchstart", onFirstTap);
+}
+
 // ─── Landing → Input ───
 
-// Begin cube in Three.js replaces the HTML button
-initBeginPhase();
+// Show "Tap to begin" gate instead of immediately showing the Begin Stone
+showTapToBegin();
 
 // Keep HTML button as a no-op fallback (hidden via CSS)
 beginBtn.addEventListener("click", () => {
@@ -1357,6 +1386,7 @@ historyClose.addEventListener("click", closeHistoryDrawer);
 // ─── Tick loop ───
 
 function tick() {
+  if (appDestroyed) return;
   const isMusicPlaying = musicGenerator.isPlaying;
   const rawProgress = musicGenerator.getProgress();
   const progressPercent = Math.max(0, Math.min(100, rawProgress * 100)) || 0;
@@ -1429,7 +1459,27 @@ function tick() {
 
   updateFocusReadingOverlay();
 
-  requestAnimationFrame(tick);
+  tickAnimationFrameId = requestAnimationFrame(tick);
 }
 
 tick();
+
+function destroyApp() {
+  if (appDestroyed) return;
+  appDestroyed = true;
+  window.clearTimeout(buildReadyTimeoutId);
+  window.clearTimeout(mashDripStopTimeoutId);
+  if (cursorAnimationFrameId) cancelAnimationFrame(cursorAnimationFrameId);
+  if (tickAnimationFrameId) cancelAnimationFrame(tickAnimationFrameId);
+  stopMashDripSound(true);
+  if (uploadedImageUrl) {
+    URL.revokeObjectURL(uploadedImageUrl);
+    uploadedImageUrl = null;
+  }
+  keyboardCapture.destroy?.();
+  touchMashCapture.destroy?.();
+  sceneManager.destroy?.();
+  musicGenerator.destroy?.();
+}
+
+window.addEventListener("beforeunload", destroyApp, { once: true });

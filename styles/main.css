@@ -64,7 +64,7 @@ body {
   border-radius: 50%;
   background: var(--text);
   pointer-events: none;
-  z-index: 9999;
+  z-index: 1000000;
   transform: translate(-50%, -50%);
   will-change: left, top;
   transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -110,7 +110,7 @@ body {
   border: 1px solid var(--ui-border);
   background: transparent;
   pointer-events: none;
-  z-index: 9998;
+  z-index: 999999;
   transform: translate(-50%, -50%);
   will-change: left, top;
   transition: width 380ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -145,6 +145,44 @@ body {
   0%   { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
   60%  { transform: translate(-50%, -50%) scale(2.4); opacity: 0.25; }
   100% { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
+}
+
+/* ─── Tap to Begin Gate ─── */
+
+.tap-to-begin {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent; /* Don't bury the environment */
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tap-to-begin.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tap-to-begin-text {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.1rem;
+  font-weight: 400;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--text); /* Use main text color for maximum visibility */
+  user-select: none;
+  animation: tap-fade-in 1.5s ease-out;
+}
+
+@keyframes tap-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ─── Stone hover label ─── */

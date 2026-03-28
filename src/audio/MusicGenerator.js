@@ -212,4 +212,15 @@ export class MusicGenerator {
       0, 1,
     );
   }
+
+  destroy() {
+    this.stop();
+    this.disposeVoices();
+    this.meter.dispose();
+    this.delay.dispose();
+    this.reverb.dispose();
+    this.compressor.dispose();
+    this.output.dispose();
+    this.limiter.dispose();
+  }
 }
