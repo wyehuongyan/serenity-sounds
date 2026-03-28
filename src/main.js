@@ -350,6 +350,20 @@ sceneManager.onFocusEnter = () => {
   haptics.trigger("light");
 };
 
+let lastBranchTouchAt = 0;
+let lastBranchTouchStone = "";
+
+sceneManager.onBranchTouch = (entry) => {
+  if (!touchMashMode || !entry) return;
+  const now = performance.now();
+  const stoneKey = `${entry.clusterIndex}:${entry.localIndex}`;
+  if (stoneKey === lastBranchTouchStone && now - lastBranchTouchAt < 180) return;
+  if (now - lastBranchTouchAt < 90) return;
+  lastBranchTouchAt = now;
+  lastBranchTouchStone = stoneKey;
+  haptics.trigger("light");
+};
+
 function applySoundState(enabled) {
   soundEnabled = enabled;
   localStorage.setItem("serenity-sound-enabled", String(enabled));
@@ -393,6 +407,43 @@ function stopMashDripSound(reset = false) {
   mashDripActive = false;
   window.clearTimeout(mashDripStopTimeoutId);
   pauseUiSound(mashDripSound, { reset });
+}
+
+function stopPlaybackHaptics() {
+  if (playbackHapticTimeoutId) {
+    window.clearTimeout(playbackHapticTimeoutId);
+    playbackHapticTimeoutId = null;
+  }
+  lastPlaybackHapticStep = -1;
+}
+
+function schedulePlaybackHaptics(startAtSeconds = 0) {
+  stopPlaybackHaptics();
+  if (!touchMashMode || !currentMoodParameters?.bpm) return;
+
+  const pulseSeconds = Math.max((60 / currentMoodParameters.bpm) * 2, 0.35);
+  lastPlaybackHapticStep = Math.max(0, Math.floor(startAtSeconds / pulseSeconds));
+
+  const run = () => {
+    if (!musicGenerator.isPlaying) {
+      stopPlaybackHaptics();
+      return;
+    }
+
+    const pulsePattern = lastPlaybackHapticStep % 8 === 0
+      ? "double"
+      : lastPlaybackHapticStep % 4 === 0
+        ? "medium"
+        : "light";
+    haptics.trigger(pulsePattern);
+    lastPlaybackHapticStep += 1;
+    playbackHapticTimeoutId = window.setTimeout(run, pulseSeconds * 1000);
+  };
+
+  const initialDelay = startAtSeconds > 0
+    ? Math.max(pulseSeconds - (startAtSeconds % pulseSeconds), 0.12)
+    : pulseSeconds;
+  playbackHapticTimeoutId = window.setTimeout(run, initialDelay * 1000);
 }
 
 // Initial theme application
@@ -469,6 +520,7 @@ let focusReadingMap = new Map();
 let lastMashCount = 0;
 let thresholdHapticFired = false;
 let lastPlaybackHapticStep = -1;
+let playbackHapticTimeoutId = null;
 const PHASE_TRANSITION_MS = 920;
 const PHASE_OVERLAP_MS = 140;
 let cursorAnimationFrameId = null;
@@ -966,7 +1018,7 @@ function handleKeystrokeUpdate(count) {
 
   if (touchMashMode && count >= MIN_KEYPRESS_COUNT && !thresholdHapticFired) {
     thresholdHapticFired = true;
-    haptics.trigger("double");
+    haptics.trigger("strong");
   }
 
   lastMashCount = count;
@@ -1072,14 +1124,22 @@ function showTapToBegin() {
   if (!tapToBegin) return;
   
   tapToBegin.classList.remove("hidden");
-  
+  let tapHandled = false;
+
+  const cleanup = () => {
+    tapToBegin.removeEventListener("pointerdown", onFirstTap);
+    tapToBegin.removeEventListener("touchstart", onFirstTap);
+    tapToBegin.removeEventListener("click", onFirstTap);
+  };
+
   const onFirstTap = (event) => {
+    if (tapHandled) return;
+    tapHandled = true;
     event.preventDefault();
     event.stopPropagation();
     tapGateDismissing = true;
     haptics.trigger("medium");
-    window.removeEventListener("click", onFirstTap);
-    window.removeEventListener("touchstart", onFirstTap);
+    cleanup();
     
     // Resume audio context on user gesture
     musicGenerator.resume().then(() => {
@@ -1098,8 +1158,9 @@ function showTapToBegin() {
     });
   };
 
-  window.addEventListener("click", onFirstTap);
-  window.addEventListener("touchstart", onFirstTap, { passive: false });
+  tapToBegin.addEventListener("pointerdown", onFirstTap);
+  tapToBegin.addEventListener("touchstart", onFirstTap, { passive: false });
+  tapToBegin.addEventListener("click", onFirstTap);
 }
 
 // ─── Landing → Input ───
@@ -1241,6 +1302,11 @@ async function togglePlayback(emitHaptic = true) {
     } catch (e) { console.error("Audio resume failed:", e); }
 
     const isPlaying = await musicGenerator.togglePlayback();
+  if (isPlaying) {
+    schedulePlaybackHaptics(0);
+  } else {
+    stopPlaybackHaptics();
+  }
   sceneManager.setPlaybackState(isPlaying);
   setPlayIcons(isPlaying);
 }
@@ -1253,6 +1319,7 @@ function resetExperience() {
   window.clearTimeout(buildReadyTimeoutId);
   stopMashDripSound(true);
   musicGenerator.stop();
+  stopPlaybackHaptics();
   sceneManager.setPlaybackState(false);
   sceneManager.setAudioLevel(0);
   sceneManager.clearScene();
@@ -1266,6 +1333,8 @@ function resetExperience() {
   lastMashCount = 0;
   thresholdHapticFired = false;
   lastPlaybackHapticStep = -1;
+  lastBranchTouchAt = 0;
+  lastBranchTouchStone = "";
 
   activeMashCapture.reset();
 
@@ -1307,6 +1376,7 @@ function returnHome() {
   window.clearTimeout(buildReadyTimeoutId);
   stopMashDripSound(true);
   musicGenerator.stop();
+  stopPlaybackHaptics();
   sceneManager.setPlaybackState(false);
   sceneManager.setAudioLevel(0);
 
@@ -1319,6 +1389,8 @@ function returnHome() {
   lastMashCount = 0;
   thresholdHapticFired = false;
   lastPlaybackHapticStep = -1;
+  lastBranchTouchAt = 0;
+  lastBranchTouchStone = "";
   activeMashCapture.reset();
 
   if (uploadedImageUrl) {
@@ -1491,6 +1563,9 @@ async function replaySession(session) {
   }
 
   const isPlaying = await musicGenerator.play();
+  if (isPlaying) {
+    schedulePlaybackHaptics(0);
+  }
   sceneManager.setPlaybackState(isPlaying);
   setPlayIcons(isPlaying);
 }
@@ -1540,21 +1615,6 @@ function tick() {
 
   // Horizontal progress update
   const currentSecs = rawProgress * (musicGenerator.durationSeconds || 0);
-  if (touchMashMode && isMusicPlaying && currentMoodParameters?.bpm) {
-    const pulseSeconds = Math.max((60 / currentMoodParameters.bpm) * 2, 0.35);
-    const pulseIndex = Math.floor(currentSecs / pulseSeconds);
-    if (pulseIndex !== lastPlaybackHapticStep) {
-      lastPlaybackHapticStep = pulseIndex;
-      const pulsePattern = pulseIndex % 8 === 0
-        ? "double"
-        : pulseIndex % 4 === 0
-          ? "medium"
-          : "light";
-      haptics.trigger(pulsePattern);
-    }
-  } else if (!isMusicPlaying) {
-    lastPlaybackHapticStep = -1;
-  }
   
   if (progressFill) {
     progressFill.style.width = `${progressPercent}%`;
@@ -1619,6 +1679,7 @@ function destroyApp() {
   appDestroyed = true;
   window.clearTimeout(buildReadyTimeoutId);
   window.clearTimeout(mashDripStopTimeoutId);
+  stopPlaybackHaptics();
   if (cursorAnimationFrameId) cancelAnimationFrame(cursorAnimationFrameId);
   if (tickAnimationFrameId) cancelAnimationFrame(tickAnimationFrameId);
   stopMashDripSound(true);
