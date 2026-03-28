@@ -306,11 +306,13 @@ function applyTheme(theme) {
 }
 
 themeToggle.addEventListener("click", () => {
+  haptics.trigger("light");
   const nextTheme = currentTheme === "dark" ? "light" : "dark";
   applyTheme(nextTheme);
 });
 
 soundToggle?.addEventListener("click", () => {
+  haptics.trigger("light");
   applySoundState(!soundEnabled);
 });
 
@@ -341,7 +343,7 @@ const sceneManager = new SceneManager(canvasContainer);
 const musicGenerator = new MusicGenerator();
 
 sceneManager.onBeginPress = () => {
-  haptics.trigger("medium");
+  haptics.trigger("strong");
 };
 
 sceneManager.onFocusEnter = () => {
@@ -514,6 +516,9 @@ let uploadedImagePalette = [];
 let uploadedImageUrl = null;
 let desktopMashCursorHintVisible = false;
 let focusReadingMap = new Map();
+let lastMashCount = 0;
+let thresholdHapticFired = false;
+let lastPlaybackHapticStep = -1;
 const PHASE_TRANSITION_MS = 920;
 const PHASE_OVERLAP_MS = 140;
 let cursorAnimationFrameId = null;
@@ -955,6 +960,17 @@ function updateMashProgress(count) {
 function handleKeystrokeUpdate(count) {
   updateMashProgress(count);
 
+  if (touchMashMode && count > lastMashCount) {
+    haptics.trigger("light");
+  }
+
+  if (touchMashMode && count >= MIN_KEYPRESS_COUNT && !thresholdHapticFired) {
+    thresholdHapticFired = true;
+    haptics.trigger("double");
+  }
+
+  lastMashCount = count;
+
   if (count > 0) {
     ensureAudioPrimed();
     touchMashDripSound();
@@ -1061,6 +1077,7 @@ function showTapToBegin() {
     event.preventDefault();
     event.stopPropagation();
     tapGateDismissing = true;
+    haptics.trigger("medium");
     window.removeEventListener("click", onFirstTap);
     window.removeEventListener("touchstart", onFirstTap);
     
@@ -1099,6 +1116,7 @@ beginBtn.addEventListener("click", () => {
 // ─── Sign-up modal ───
 
 signupLink.addEventListener("click", () => {
+  haptics.trigger("light");
   isOverlayVisible = true;
   signupModal.classList.remove("hidden");
   setTimeout(() => signupEmail.focus(), 50);
@@ -1209,6 +1227,11 @@ playPauseBtn.addEventListener("click", togglePlayback);
 
 async function togglePlayback(emitHaptic = true) {
     if (!musicGenerator) return;
+
+    const nextWillPlay = !musicGenerator.isPlaying;
+    if (emitHaptic) {
+      haptics.trigger(nextWillPlay ? "medium" : "light");
+    }
     
     // Resume context on every play/pause gesture to stay robust
     try {
@@ -1218,9 +1241,6 @@ async function togglePlayback(emitHaptic = true) {
     } catch (e) { console.error("Audio resume failed:", e); }
 
     const isPlaying = await musicGenerator.togglePlayback();
-  if (emitHaptic) {
-    haptics.trigger(isPlaying ? "medium" : "light");
-  }
   sceneManager.setPlaybackState(isPlaying);
   setPlayIcons(isPlaying);
 }
@@ -1243,6 +1263,9 @@ function resetExperience() {
   hintDismissed = false;
   generateAllowed = false;
   desktopMashCursorHintVisible = !touchMashMode;
+  lastMashCount = 0;
+  thresholdHapticFired = false;
+  lastPlaybackHapticStep = -1;
 
   activeMashCapture.reset();
 
@@ -1293,6 +1316,9 @@ function returnHome() {
   hintDismissed = false;
   generateAllowed = false;
   desktopMashCursorHintVisible = false;
+  lastMashCount = 0;
+  thresholdHapticFired = false;
+  lastPlaybackHapticStep = -1;
   activeMashCapture.reset();
 
   if (uploadedImageUrl) {
@@ -1337,6 +1363,7 @@ function returnHome() {
 }
 
 returnHomeLink?.addEventListener("click", () => {
+  haptics.trigger("double");
   sceneManager.suppressStoneClickOnce();
   returnHome();
 });
@@ -1469,6 +1496,7 @@ async function replaySession(session) {
 }
 
 function openHistoryDrawer() {
+  haptics.trigger("light");
   isOverlayVisible = true;
   renderHistoryList();
   historyDrawer.classList.remove("hidden");
@@ -1512,6 +1540,21 @@ function tick() {
 
   // Horizontal progress update
   const currentSecs = rawProgress * (musicGenerator.durationSeconds || 0);
+  if (touchMashMode && isMusicPlaying && currentMoodParameters?.bpm) {
+    const pulseSeconds = Math.max((60 / currentMoodParameters.bpm) * 2, 0.35);
+    const pulseIndex = Math.floor(currentSecs / pulseSeconds);
+    if (pulseIndex !== lastPlaybackHapticStep) {
+      lastPlaybackHapticStep = pulseIndex;
+      const pulsePattern = pulseIndex % 8 === 0
+        ? "double"
+        : pulseIndex % 4 === 0
+          ? "medium"
+          : "light";
+      haptics.trigger(pulsePattern);
+    }
+  } else if (!isMusicPlaying) {
+    lastPlaybackHapticStep = -1;
+  }
   
   if (progressFill) {
     progressFill.style.width = `${progressPercent}%`;

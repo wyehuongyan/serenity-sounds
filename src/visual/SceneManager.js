@@ -1431,6 +1431,7 @@ export class SceneManager {
     this.focusReading = null;
     this.onBeginPress = null;
     this.onFocusEnter = null;
+    this.onBranchTouch = null;
 
     this._onStoneClick = () => {
       if (this.ignoreNextStoneClick) {
@@ -2629,6 +2630,7 @@ export class SceneManager {
           );
           const candidate = availableTargets[candidateIndex];
           bundle.targetStone = candidate.cube;
+          this.onBranchTouch?.(candidate.cube);
           if (candidate.cube !== bundle.lastStone) {
             bundle.lastStone = null;
           }

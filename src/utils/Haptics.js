@@ -5,6 +5,11 @@ const PRESETS = {
     { duration: 10, delay: 0 },
     { duration: 12, delay: 80 },
   ],
+  strong: [
+    { duration: 12, delay: 0 },
+    { duration: 12, delay: 55 },
+    { duration: 14, delay: 55 },
+  ],
 };
 
 function normalizePattern(input) {
