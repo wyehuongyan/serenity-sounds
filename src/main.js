@@ -613,44 +613,104 @@ function roleForStone(localIndex, clusterSize) {
   return localIndex % 2 === 0 ? "hinge" : "quiet edge";
 }
 
+function emotionForStone(baseEmotion, role, cluster, localIndex) {
+  const clusterSize = cluster.size || cluster.keys?.length || 0;
+  const spread = computeClusterSpread(cluster);
+  const phase = clusterSize <= 1 ? 0.5 : localIndex / Math.max(clusterSize - 1, 1);
+
+  if (role === "first pulse") {
+    return baseEmotion.replace("this part", "this first part").replace("this one", "this first one");
+  }
+  if (role === "aftershock") {
+    if (baseEmotion.includes("soften")) return "this softened later than the rest";
+    if (baseEmotion.includes("steady")) return "this steadied after everything else had moved through";
+    return "you were still carrying this after the first rush";
+  }
+  if (role === "core fragment") {
+    if (baseEmotion.includes("hardest")) return "this was where most of the pressure gathered";
+    if (baseEmotion.includes("steady")) return "this was the heaviest part, but it held together";
+    return "this was the center of what you were carrying";
+  }
+  if (role === "surge") {
+    return spread > 0.7
+      ? "this part reached outward before it found its shape"
+      : "this part pressed forward more than the rest";
+  }
+  if (role === "linger") {
+    return phase > 0.65
+      ? "this part stayed behind after the sharper feeling passed"
+      : "this part stayed with you quietly";
+  }
+  if (role === "hinge") {
+    return "this was where the feeling started to turn";
+  }
+  if (role === "quiet edge") {
+    return spread > 0.7
+      ? "this sat at the edge while everything else spread around it"
+      : "this sat off to the side, but it still belonged to the whole";
+  }
+  return baseEmotion;
+}
+
 function lineForStone(role, emotion, cluster, analysis, localIndex) {
   const size = cluster.size || cluster.keys?.length || 0;
   const avgVelocity = cluster.averageVelocity || analysis.averageVelocity || 180;
   const spread = computeClusterSpread(cluster);
   const leftRight = cluster.averageHorizontal || 0;
+  const vertical = cluster.averageVertical || 0;
+  const clusterSize = Math.max(size, 1);
+  const phase = clusterSize <= 1 ? 0.5 : localIndex / Math.max(clusterSize - 1, 1);
+  const opening = phase < 0.33;
+  const closing = phase > 0.66;
 
   if (role === "first pulse") {
     return avgVelocity < 130
       ? "This is where it first spilled out."
-      : "This is where it first started to gather.";
+      : leftRight < -0.12
+        ? "This is where it first gathered itself and pushed through."
+        : "This is where it first started to gather.";
   }
   if (role === "aftershock") {
     return avgVelocity < 150
       ? "This came after the first rush had already passed."
-      : "This held on even after the rest had softened.";
+      : closing
+        ? "This held on even after the rest had softened."
+        : "This was still there after the main push had moved through.";
   }
   if (role === "core fragment") {
-    if (size >= 5) return "You pushed hardest here.";
+    if (size >= 5 && avgVelocity < 150) return "You pushed hardest here.";
+    if (vertical > 0.18) return "This sat near the center, but it was lighter on its feet.";
     return "This is the part that carried most of the weight.";
   }
   if (role === "surge") {
     return spread > 0.7
       ? "The energy spread out here before it could settle."
-      : "This part leaned forward more than the rest.";
+      : opening
+        ? "This part leaned forward before the rest could catch up."
+        : "This part leaned forward more than the rest.";
   }
   if (role === "linger") {
-    return "This part was quieter, but it stayed with you longer.";
+    return closing
+      ? "This part was quieter, but it stayed with you longer."
+      : "This part did not ask for much attention, but it stayed.";
   }
   if (role === "hinge") {
     return leftRight < -0.15
       ? "This is where it began folding back in."
-      : "This is where the feeling started to turn.";
+      : vertical > 0.15
+        ? "This is where the feeling lifted and started to turn."
+        : "This is where the feeling started to turn.";
   }
   if (emotion === "this one stayed with you for longer") {
     return "It stayed with you quietly, even after the sharper part had gone.";
   }
-  return localIndex % 2 === 0
-    ? "This part was lighter, but it still shaped the whole thing."
+  if (role === "quiet edge") {
+    return localIndex % 2 === 0
+      ? "This part sat at the edge, but it still shaped the whole thing."
+      : "Its force was smaller, but it kept the rest from feeling alone.";
+  }
+  return opening
+    ? "This part arrived lightly, but it still changed the shape of everything."
     : "Its force was smaller, but it helped the rest calm down.";
 }
 
@@ -669,14 +729,14 @@ function buildFocusReadings(analysis) {
 
     keys.forEach((entry, localIndex) => {
       const role = roleForStone(localIndex, clusterSize);
-      const isPrimary = primaryIndices.has(localIndex);
+      const stoneEmotion = emotionForStone(reading.emotion, role, cluster, localIndex);
       readings.set(
         getStoneReadingKey(cluster.index, localIndex),
         {
           role,
-          emotion: reading.emotion,
+          emotion: stoneEmotion,
           motif: reading.motif,
-          line: isPrimary ? lineForStone(role, reading.emotion, cluster, analysis, localIndex) : "",
+          line: lineForStone(role, stoneEmotion, cluster, analysis, localIndex),
         },
       );
     });
