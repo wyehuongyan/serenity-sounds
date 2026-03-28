@@ -976,7 +976,7 @@ function applyUploadedPaletteInfluence(moodParameters) {
 
   const blendedPalette = moodParameters.colorPalette.map((color, index) => {
     const imageColor = uploadedImagePalette[index % uploadedImagePalette.length];
-    const influence = 0.34;
+    const influence = 0.56;
     return blendHexColors(color, imageColor, influence);
   });
 

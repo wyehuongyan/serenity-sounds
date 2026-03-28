@@ -374,6 +374,7 @@ const CUBE_VERT = /* glsl */`
 
 const CUBE_FRAG = /* glsl */`
   uniform vec3  uInkColor;
+  uniform vec3  uAccentColor;
   uniform float uOpacity;
   uniform float uTime;
   uniform float uAudio;
@@ -439,9 +440,11 @@ const CUBE_FRAG = /* glsl */`
     float rimHalo = pow(1.0 - NdotV, mix(4.6, 3.0, uTheme));
     vec3 pearlRim = vec3(0.96, 0.93, 0.88) * rimHalo * uTheme * 0.16;
     
-    vec3 hoverTint = mix(vec3(0.28, 0.38, 0.56), vec3(0.96, 0.86, 0.58), uTheme);
+    vec3 accentGlow = mix(uAccentColor * 0.7 + vec3(0.08, 0.1, 0.14), uAccentColor * 1.05 + vec3(0.06, 0.04, 0.0), uTheme);
+    vec3 hoverTint = mix(mix(vec3(0.28, 0.38, 0.56), accentGlow, 0.45), mix(vec3(0.96, 0.86, 0.58), accentGlow, 0.55), uTheme);
     vec3 hoverGlow = hoverTint * rimHalo * uHover * mix(0.22, 0.34, uTheme);
-    vec3 clusterAura = mix(vec3(0.34, 0.46, 0.66), vec3(0.96, 0.86, 0.66), uTheme) * rimHalo * uClusterAura * mix(0.18, 0.28, uTheme);
+    vec3 clusterAuraBase = mix(mix(vec3(0.34, 0.46, 0.66), accentGlow, 0.42), mix(vec3(0.96, 0.86, 0.66), accentGlow, 0.62), uTheme);
+    vec3 clusterAura = clusterAuraBase * rimHalo * uClusterAura * mix(0.18, 0.28, uTheme);
     
     gl_FragColor = vec4(
       clamp(mix(finalGlow, skyRef * 0.15, pow(1.0 - NdotV, mix(6.5, 3.5, uTheme)) * mix(0.4, 0.2, uTheme))
@@ -851,6 +854,7 @@ function createCubeShaderMaterial(inkColor, opacity, seed = 0) {
       uAudio:    { value: 0 }, // Added uAudio
       uSeed:     { value: seed },
       uInkColor: { value: new THREE.Color(inkColor) },
+      uAccentColor: { value: new THREE.Color(inkColor) },
       uOpacity:  { value: opacity },
       uTheme:    { value: 0 },
       uResonance: { value: 0 },
@@ -1645,6 +1649,7 @@ export class SceneManager {
 
     const clusters = analysis.clusters || [];
     const palette  = moodParameters.colorPalette;
+    const imagePalette = moodParameters.imagePalette || palette;
     const trailColor = palette[0] || "#6e685d";
 
     const cursorTrailRibbons = [];
@@ -1697,6 +1702,7 @@ export class SceneManager {
       this.clusterRoot.add(group);
 
       const inkCol = palette[ci % palette.length];
+      const accentCol = imagePalette[ci % imagePalette.length] || inkCol;
 
       (cluster.keys || []).forEach((entry, ki) => {
         const seed    = (ci * 100 + ki) * 37;
@@ -1704,6 +1710,7 @@ export class SceneManager {
         const opacity = 0.65 + seededVal(seed+20) * 0.28;
 
         const mat  = createCubeShaderMaterial(inkCol, opacity, seededVal(seed) * 10.0);
+        mat.uniforms.uAccentColor.value.set(accentCol);
         const mesh = new THREE.Mesh(this.gemGeo, mat);
 
         const pos = sunflowerPosition(ki, CUBE_SPACING, seed);
@@ -1786,7 +1793,7 @@ export class SceneManager {
       });
     });
 
-    this.generateGraph(moodParameters.colorPalette);
+    this.generateGraph(moodParameters.colorPalette, moodParameters.imagePalette || moodParameters.colorPalette);
 
     // ── Lightweight Dust Particle Emitter (single draw call) ──
     const DUST_COUNT = this.isMobileRuntime ? 120 : 200;
@@ -2788,7 +2795,7 @@ export class SceneManager {
     this.renderer.render(this.scene, this.camera);
   }
 
-  generateGraph(palette) {
+  generateGraph(palette, accentPalette = palette) {
     if (this.cubes.length < 2) return;
     this.cubes.forEach((cubeA, i) => {
       const neighbors = this.cubes
@@ -2800,7 +2807,9 @@ export class SceneManager {
         const pairId = [i, this.cubes.indexOf(n.cube)].sort().join("-");
         if (this.graphRibbons.some(r => r.id === pairId)) return;
 
-        const inkCol = new THREE.Color("#8f8067");
+        const baseThread = new THREE.Color("#8f8067");
+        const accentThread = new THREE.Color(accentPalette[(i + n.index) % accentPalette.length] || palette[(i + n.index) % palette.length] || "#8f8067");
+        const inkCol = baseThread.lerp(accentThread, 0.32);
         const bundleCount = 1;
         const ribbons = [];
 
