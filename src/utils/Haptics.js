@@ -52,6 +52,12 @@ class HapticsController {
     input.style.appearance = "auto";
     input.style.pointerEvents = "none";
 
+    const stopSyntheticClick = (event) => {
+      event.stopPropagation();
+    };
+    label.addEventListener("click", stopSyntheticClick);
+    input.addEventListener("click", stopSyntheticClick);
+
     label.appendChild(input);
     document.body.appendChild(label);
 

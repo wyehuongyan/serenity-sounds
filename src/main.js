@@ -517,7 +517,6 @@ let uploadedImagePalette = [];
 let uploadedImageUrl = null;
 let desktopMashCursorHintVisible = false;
 let focusReadingMap = new Map();
-let lastMashCount = 0;
 let thresholdHapticFired = false;
 let lastPlaybackHapticStep = -1;
 let playbackHapticTimeoutId = null;
@@ -554,6 +553,9 @@ const keyboardCapture = new KeyboardCapture({
 const touchMashCapture = new TouchMashCapture({
   target: phaseInput,
   onUpdate: handleKeystrokeUpdate,
+  onTouchDown: () => {
+    haptics.trigger("medium");
+  },
   shouldCapture: (event) => {
     if (!touchMashMode) {
       return false;
@@ -1012,16 +1014,10 @@ function updateMashProgress(count) {
 function handleKeystrokeUpdate(count) {
   updateMashProgress(count);
 
-  if (touchMashMode && count > lastMashCount) {
-    haptics.trigger("light");
-  }
-
   if (touchMashMode && count >= MIN_KEYPRESS_COUNT && !thresholdHapticFired) {
     thresholdHapticFired = true;
     haptics.trigger("strong");
   }
-
-  lastMashCount = count;
 
   if (count > 0) {
     ensureAudioPrimed();
@@ -1127,8 +1123,6 @@ function showTapToBegin() {
   let tapHandled = false;
 
   const cleanup = () => {
-    tapToBegin.removeEventListener("pointerdown", onFirstTap);
-    tapToBegin.removeEventListener("touchstart", onFirstTap);
     tapToBegin.removeEventListener("click", onFirstTap);
   };
 
@@ -1158,8 +1152,6 @@ function showTapToBegin() {
     });
   };
 
-  tapToBegin.addEventListener("pointerdown", onFirstTap);
-  tapToBegin.addEventListener("touchstart", onFirstTap, { passive: false });
   tapToBegin.addEventListener("click", onFirstTap);
 }
 
@@ -1330,7 +1322,6 @@ function resetExperience() {
   hintDismissed = false;
   generateAllowed = false;
   desktopMashCursorHintVisible = !touchMashMode;
-  lastMashCount = 0;
   thresholdHapticFired = false;
   lastPlaybackHapticStep = -1;
   lastBranchTouchAt = 0;
@@ -1386,7 +1377,6 @@ function returnHome() {
   hintDismissed = false;
   generateAllowed = false;
   desktopMashCursorHintVisible = false;
-  lastMashCount = 0;
   thresholdHapticFired = false;
   lastPlaybackHapticStep = -1;
   lastBranchTouchAt = 0;
