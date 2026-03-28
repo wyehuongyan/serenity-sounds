@@ -159,6 +159,7 @@ body {
   justify-content: center;
   background: transparent; /* Don't bury the environment */
   pointer-events: auto;
+  touch-action: manipulation;
   opacity: 1;
   visibility: visible;
   transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);

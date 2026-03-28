@@ -77,7 +77,6 @@ class HapticsController {
         vibratePattern.push(phase.duration);
       });
       navigator.vibrate(vibratePattern);
-      return;
     }
 
     let cumulativeDelay = 0;
