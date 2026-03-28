@@ -374,7 +374,9 @@ const CUBE_VERT = /* glsl */`
 
 const CUBE_FRAG = /* glsl */`
   uniform vec3  uInkColor;
-  uniform vec3  uAccentColor;
+  uniform vec3  uAccentColorA;
+  uniform vec3  uAccentColorB;
+  uniform vec3  uAccentColorC;
   uniform float uOpacity;
   uniform float uTime;
   uniform float uAudio;
@@ -432,25 +434,51 @@ const CUBE_FRAG = /* glsl */`
     float speckleThresh = mix(0.55, 0.65, uTheme);
     float speckles = smoothstep(speckleThresh, speckleThresh + 0.04, fbm(vPos.xyz * 7.0 + uSeed * 3.0 + uTime * 0.3));
     vein = max(vein, speckles * (1.2 + uResonance * 4.0));
-    float accentThresh = mix(0.46, 0.52, uTheme);
-    float accentNoise = fbm(vPos.xyz * 4.4 - uSeed * 1.6 + vec3(2.1, 0.6, 1.4) + uTime * 0.08);
-    float accentSpeckles = smoothstep(accentThresh, accentThresh + 0.032, accentNoise);
-    float accentDust = smoothstep(accentThresh + 0.035, accentThresh + 0.075, fbm(vPos.xyz * 6.4 + uSeed * 2.1 - uTime * 0.05));
-    float accentEdgeBreak = smoothstep(0.48, 0.62, fbm(vPos.xyz * 10.8 + uSeed * 5.3 + uTime * 0.04));
-    accentSpeckles *= accentEdgeBreak;
-    accentDust *= mix(0.86, 1.0, accentEdgeBreak);
+    float accentThreshA = mix(0.46, 0.52, uTheme);
+    float accentNoiseA = fbm(vPos.xyz * 2.8 - uSeed * 1.1 + vec3(2.1, 0.6, 1.4) + uTime * 0.06);
+    float accentPatchA = smoothstep(accentThreshA, accentThreshA + 0.032, accentNoiseA);
+    float accentBreakA = smoothstep(0.44, 0.58, fbm(vPos.xyz * 7.2 + uSeed * 3.9 + uTime * 0.03));
+    accentPatchA *= accentBreakA;
+
+    float accentThreshB = mix(0.5, 0.57, uTheme);
+    float accentNoiseB = fbm(vPos.xyz * 3.4 + uSeed * 1.7 + vec3(0.7, 2.3, 1.1) - uTime * 0.04);
+    float accentPatchB = smoothstep(accentThreshB, accentThreshB + 0.03, accentNoiseB);
+    float accentBreakB = smoothstep(0.4, 0.6, fbm(vPos.xyz * 8.4 - uSeed * 3.4 + uTime * 0.025));
+    accentPatchB *= accentBreakB;
+
+    float accentThreshC = mix(0.54, 0.61, uTheme);
+    float accentNoiseC = fbm(vPos.xyz * 4.0 - uSeed * 2.0 + vec3(1.9, 1.1, 2.8) + uTime * 0.05);
+    float accentPatchC = smoothstep(accentThreshC, accentThreshC + 0.026, accentNoiseC);
+    float accentBreakC = smoothstep(0.42, 0.58, fbm(vPos.xyz * 9.0 + uSeed * 2.8 - uTime * 0.02));
+    accentPatchC *= accentBreakC;
     
     vec3 goldInk = vec3(1.0, 0.88, 0.55);
-    vec3 accentInk = mix(uAccentColor * 0.8 + vec3(0.03, 0.035, 0.04), uAccentColor * 1.08 + vec3(0.07, 0.05, 0.02), uTheme);
+    vec3 accentInkALight = uAccentColorA * 0.12 + vec3(0.001, 0.0015, 0.002);
+    vec3 accentInkBLight = uAccentColorB * 0.12 + vec3(0.001, 0.0015, 0.002);
+    vec3 accentInkCLight = uAccentColorC * 0.12 + vec3(0.001, 0.0015, 0.002);
+    vec3 accentInkADark = uAccentColorA * 0.88 + vec3(0.018, 0.014, 0.008);
+    vec3 accentInkBDark = uAccentColorB * 0.88 + vec3(0.018, 0.014, 0.008);
+    vec3 accentInkCDark = uAccentColorC * 0.88 + vec3(0.018, 0.014, 0.008);
+    vec3 accentInkA = mix(accentInkALight, accentInkADark, uTheme);
+    vec3 accentInkB = mix(accentInkBLight, accentInkBDark, uTheme);
+    vec3 accentInkC = mix(accentInkCLight, accentInkCDark, uTheme);
     vec3 finalGlow = mix(internalGlow, goldInk * (1.2 + uTheme * 0.3 + uResonance * 1.8), vein * mix(0.9, 0.85, uTheme)) + goldInk * uResonance * 0.08;
-    finalGlow += accentInk * accentSpeckles * (0.72 + uResonance * 0.5) * mix(1.0, 0.9, uTheme);
-    finalGlow += accentInk * accentDust * (0.34 + uAudio * 0.1 + uResonance * 0.18);
+    float accentPresence = 1.0 - smoothstep(0.58, 0.92, NdotV);
+    float lightModeAccentBoost = 1.0 - uTheme;
+    vec3 pigmentA = mix(accentInkA * 1.9, finalGlow * 0.22 + accentInkA * 1.12, uTheme);
+    vec3 pigmentB = mix(accentInkB * 1.7, finalGlow * 0.26 + accentInkB * 0.96, uTheme);
+    vec3 pigmentC = mix(accentInkC * 1.55, finalGlow * 0.3 + accentInkC * 0.84, uTheme);
+    finalGlow = mix(finalGlow, pigmentA, accentPatchA * mix(0.96, 0.34, uTheme));
+    finalGlow = mix(finalGlow, pigmentB, accentPatchB * mix(0.86, 0.26, uTheme));
+    finalGlow = mix(finalGlow, pigmentC, accentPatchC * mix(0.74, 0.22, uTheme));
+    finalGlow -= vec3(0.16, 0.145, 0.128) * (accentPatchA * 0.56 + accentPatchB * 0.42 + accentPatchC * 0.34) * accentPresence * (0.9 + lightModeAccentBoost * 0.6);
     
     vec3 skyRef = mix(vec3(0.06, 0.08, 0.12), vec3(0.85, 0.88, 0.92), uTheme);
     float rimHalo = pow(1.0 - NdotV, mix(4.6, 3.0, uTheme));
     vec3 pearlRim = vec3(0.96, 0.93, 0.88) * rimHalo * uTheme * 0.16;
     
-    vec3 accentGlow = mix(uAccentColor * 0.7 + vec3(0.08, 0.1, 0.14), uAccentColor * 1.05 + vec3(0.06, 0.04, 0.0), uTheme);
+    vec3 accentGlowSeed = (accentInkA + accentInkB + accentInkC) / 3.0;
+    vec3 accentGlow = mix(accentGlowSeed * 0.72 + vec3(0.08, 0.1, 0.14), accentGlowSeed * 1.02 + vec3(0.06, 0.04, 0.0), uTheme);
     vec3 hoverTint = mix(mix(vec3(0.28, 0.38, 0.56), accentGlow, 0.45), mix(vec3(0.96, 0.86, 0.58), accentGlow, 0.55), uTheme);
     vec3 hoverGlow = hoverTint * rimHalo * uHover * mix(0.22, 0.34, uTheme);
     vec3 clusterAuraBase = mix(mix(vec3(0.34, 0.46, 0.66), accentGlow, 0.42), mix(vec3(0.96, 0.86, 0.66), accentGlow, 0.62), uTheme);
@@ -864,7 +892,9 @@ function createCubeShaderMaterial(inkColor, opacity, seed = 0) {
       uAudio:    { value: 0 }, // Added uAudio
       uSeed:     { value: seed },
       uInkColor: { value: new THREE.Color(inkColor) },
-      uAccentColor: { value: new THREE.Color(inkColor) },
+      uAccentColorA: { value: new THREE.Color(inkColor) },
+      uAccentColorB: { value: new THREE.Color(inkColor) },
+      uAccentColorC: { value: new THREE.Color(inkColor) },
       uOpacity:  { value: opacity },
       uTheme:    { value: 0 },
       uResonance: { value: 0 },
@@ -1712,7 +1742,6 @@ export class SceneManager {
       this.clusterRoot.add(group);
 
       const inkCol = palette[ci % palette.length];
-      const accentCol = imagePalette[ci % imagePalette.length] || inkCol;
 
       (cluster.keys || []).forEach((entry, ki) => {
         const seed    = (ci * 100 + ki) * 37;
@@ -1720,7 +1749,12 @@ export class SceneManager {
         const opacity = 0.65 + seededVal(seed+20) * 0.28;
 
         const mat  = createCubeShaderMaterial(inkCol, opacity, seededVal(seed) * 10.0);
-        mat.uniforms.uAccentColor.value.set(accentCol);
+        const accentA = imagePalette[(ci + ki) % imagePalette.length] || inkCol;
+        const accentB = imagePalette[(ci + ki + 1) % imagePalette.length] || accentA;
+        const accentC = imagePalette[(ci + ki + 2) % imagePalette.length] || accentB;
+        mat.uniforms.uAccentColorA.value.set(accentA);
+        mat.uniforms.uAccentColorB.value.set(accentB);
+        mat.uniforms.uAccentColorC.value.set(accentC);
         const mesh = new THREE.Mesh(this.gemGeo, mat);
 
         const pos = sunflowerPosition(ki, CUBE_SPACING, seed);

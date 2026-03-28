@@ -26,6 +26,49 @@ const VOICE_SUBDIVISIONS = ["1m", "2n.", "2n"];
 // Voice velocities decrease with index so higher voices sit lower in the mix
 const VOICE_VELOCITY_BASE = [0.28, 0.22, 0.16];
 
+function hexToRgb(hex) {
+  const clean = hex.replace("#", "");
+  const value = clean.length === 3
+    ? clean.split("").map((char) => char + char).join("")
+    : clean;
+
+  return {
+    r: parseInt(value.slice(0, 2), 16) / 255,
+    g: parseInt(value.slice(2, 4), 16) / 255,
+    b: parseInt(value.slice(4, 6), 16) / 255,
+  };
+}
+
+function analyzeImagePalette(palette = []) {
+  if (!palette.length) {
+    return {
+      warmth: 0.5,
+      brightness: 0.5,
+      saturation: 0.5,
+    };
+  }
+
+  const totals = palette.reduce((acc, color) => {
+    const { r, g, b } = hexToRgb(color);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const chroma = max - min;
+    const luminance = r * 0.299 + g * 0.587 + b * 0.114;
+
+    acc.warmth += clamp((r - b + 1) * 0.5, 0, 1);
+    acc.brightness += luminance;
+    acc.saturation += clamp(chroma, 0, 1);
+    return acc;
+  }, { warmth: 0, brightness: 0, saturation: 0 });
+
+  const count = palette.length;
+  return {
+    warmth: totals.warmth / count,
+    brightness: totals.brightness / count,
+    saturation: totals.saturation / count,
+  };
+}
+
 function weightedChoice(items, random) {
   const total = items.reduce((sum, i) => sum + i.weight, 0);
   let cursor = 0;
@@ -96,9 +139,27 @@ export class MusicGenerator {
     this.currentMood     = moodParameters;
     this.durationSeconds = moodParameters.trackLengthSeconds;
     this.random          = createSeededRandom(moodParameters.seed);
+    const paletteInfluence = analyzeImagePalette(moodParameters.imagePalette);
 
-    this.reverb.wet.value    = clamp(moodParameters.reverbWet, 0.28, 0.52);
-    Tone.Transport.bpm.value = moodParameters.bpm;
+    this.reverb.wet.value    = clamp(
+      moodParameters.reverbWet
+      + (paletteInfluence.brightness - 0.5) * 0.06
+      + (paletteInfluence.saturation - 0.5) * 0.04,
+      0.26,
+      0.56,
+    );
+    this.delay.feedback.value = clamp(
+      0.08
+      + (paletteInfluence.warmth - 0.5) * 0.04
+      + (paletteInfluence.saturation - 0.5) * 0.03,
+      0.05,
+      0.14,
+    );
+    Tone.Transport.bpm.value = clamp(
+      moodParameters.bpm + (paletteInfluence.brightness - 0.5) * 4,
+      48,
+      84,
+    );
 
     const [low, high] = moodParameters.pitchRange;
     const voiceCount  = Math.min(moodParameters.clusterLayers.length, MAX_VOICES);
@@ -128,7 +189,8 @@ export class MusicGenerator {
       panner.connect(this.delay);
       this.synths.push({ synth, panner });
 
-      const velocity   = clamp(VOICE_VELOCITY_BASE[vi] + layer.prominence * 0.12, 0.10, 0.38);
+      const voiceToneBias = (paletteInfluence.warmth - 0.5) * 0.06 - vi * (paletteInfluence.brightness - 0.5) * 0.015;
+      const velocity   = clamp(VOICE_VELOCITY_BASE[vi] + layer.prominence * 0.12 + voiceToneBias, 0.10, 0.4);
       const noteDur    = vi === 0 ? "1m" : "2n.";
       const interval   = VOICE_SUBDIVISIONS[vi] ?? "1m";
 
