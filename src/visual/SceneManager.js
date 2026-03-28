@@ -1429,6 +1429,8 @@ export class SceneManager {
     this.resonancePulses  = [];    // [{ clusterIndex, age }]
     this.ignoreNextStoneClick = false;
     this.focusReading = null;
+    this.onBeginPress = null;
+    this.onFocusEnter = null;
 
     this._onStoneClick = () => {
       if (this.ignoreNextStoneClick) {
@@ -1467,6 +1469,7 @@ export class SceneManager {
 
     this._onBeginClick = () => {
       if (!this.beginCube || this.beginCubeExiting || !this.beginCubeHovered) return;
+      this.onBeginPress?.();
       this.dismissBeginCube();
     };
     window.addEventListener("click", this._onBeginClick);
@@ -1497,6 +1500,7 @@ export class SceneManager {
   _enterFocus(entry) {
     this.releasingStone = null;
     this.focusedStone = entry;
+    this.onFocusEnter?.(entry);
     const wp = new THREE.Vector3();
     entry.mesh.getWorldPosition(wp);
     this.focusOriginWorld.copy(wp);

@@ -5,6 +5,7 @@ import { analyzeInput } from "./input/InputAnalyzer.js";
 import { mapToMoodParameters } from "./analysis/MoodMapper.js";
 import { SceneManager } from "./visual/SceneManager.js";
 import { MusicGenerator } from "./audio/MusicGenerator.js";
+import { haptics } from "./utils/Haptics.js";
 
 function createUiSound(path, volume, { loop = false } = {}) {
   const audio = new Audio(new URL(path, import.meta.url).href);
@@ -338,6 +339,14 @@ const keystrokeCount = document.querySelector("#keystroke-count");
 
 const sceneManager = new SceneManager(canvasContainer);
 const musicGenerator = new MusicGenerator();
+
+sceneManager.onBeginPress = () => {
+  haptics.trigger("medium");
+};
+
+sceneManager.onFocusEnter = () => {
+  haptics.trigger("light");
+};
 
 function applySoundState(enabled) {
   soundEnabled = enabled;
@@ -1158,6 +1167,7 @@ imageUploadInput.addEventListener("change", (event) => {
 generateBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   sceneManager.suppressStoneClickOnce();
+  haptics.trigger("double");
   generateComposition();
 });
 
@@ -1197,7 +1207,7 @@ async function generateComposition() {
 
 playPauseBtn.addEventListener("click", togglePlayback);
 
-async function togglePlayback() {
+async function togglePlayback(emitHaptic = true) {
     if (!musicGenerator) return;
     
     // Resume context on every play/pause gesture to stay robust
@@ -1208,6 +1218,9 @@ async function togglePlayback() {
     } catch (e) { console.error("Audio resume failed:", e); }
 
     const isPlaying = await musicGenerator.togglePlayback();
+  if (emitHaptic) {
+    haptics.trigger(isPlaying ? "medium" : "light");
+  }
   sceneManager.setPlaybackState(isPlaying);
   setPlayIcons(isPlaying);
 }
@@ -1566,6 +1579,7 @@ function destroyApp() {
   if (cursorAnimationFrameId) cancelAnimationFrame(cursorAnimationFrameId);
   if (tickAnimationFrameId) cancelAnimationFrame(tickAnimationFrameId);
   stopMashDripSound(true);
+  haptics.destroy();
   if (uploadedImageUrl) {
     URL.revokeObjectURL(uploadedImageUrl);
     uploadedImageUrl = null;
