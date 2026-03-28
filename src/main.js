@@ -153,9 +153,35 @@ document.addEventListener("pointermove", (event) => {
   syncVisualPointer(event.clientX, event.clientY, event.target instanceof Element ? event.target : null);
 });
 
+document.addEventListener("touchstart", (event) => {
+  if (!touchMashMode) {
+    return;
+  }
+
+  const touch = event.touches[0] || event.changedTouches[0];
+  if (!touch) {
+    return;
+  }
+
+  syncVisualPointer(
+    touch.clientX,
+    touch.clientY,
+    event.target instanceof Element ? event.target : null,
+  );
+}, { passive: true });
+
 document.addEventListener("touchmove", (event) => {
   if (!touchMashMode) {
     return;
+  }
+
+  const touch = event.touches[0] || event.changedTouches[0];
+  if (touch) {
+    syncVisualPointer(
+      touch.clientX,
+      touch.clientY,
+      event.target instanceof Element ? event.target : null,
+    );
   }
 
   const target = event.target;
