@@ -61,6 +61,8 @@ let lastBeginHoverAt = 0;
 let mashDripStopTimeoutId = null;
 let mashDripActive = false;
 let uiAudioPrimed = false;
+let tapGateActive = true;
+let tapGateDismissing = false;
 
 async function ensureAudioPrimed() {
   if (uiAudioPrimed) return;
@@ -71,28 +73,6 @@ async function ensureAudioPrimed() {
   } catch (_) {
     // Non-fatal; UI sounds can still be attempted below.
   }
-
-  const audioEls = [beginHoverSound, beginPressSound, mashDripSound];
-  await Promise.all(audioEls.map(async (audio) => {
-    const previousMuted = audio.muted;
-    const previousVolume = audio.volume;
-    try {
-      audio.muted = true;
-      audio.volume = 0;
-      audio.currentTime = 0;
-      const playPromise = audio.play();
-      if (playPromise?.then) {
-        await playPromise;
-      }
-    } catch (_) {
-      // Ignore per-sound priming failures.
-    } finally {
-      audio.pause();
-      audio.currentTime = 0;
-      audio.muted = !soundEnabled || previousMuted;
-      audio.volume = Number(audio.dataset.baseVolume || previousVolume || 1);
-    }
-  }));
 }
 
 function onMouseMove(e) {
@@ -202,7 +182,7 @@ document.addEventListener("mousedown", () => {
   cursorDot.classList.add("is-clicking");
   cursorRing.classList.add("is-clicking");
 
-  if (!isOverlayVisible && sceneManager?.beginCubeHovered) {
+  if (!tapGateActive && !tapGateDismissing && !isOverlayVisible && sceneManager?.beginCubeHovered) {
     playUiSound(beginPressSound);
     sceneManager.triggerLandingRipple();
   }
@@ -267,7 +247,7 @@ function animateCursor() {
     cursorRing.classList.add("is-hovering");
   }
 
-  if (beginHovered && !lastBeginHover) {
+  if (!tapGateActive && !tapGateDismissing && beginHovered && !lastBeginHover) {
     const now = performance.now();
     if (now - lastBeginHoverAt > 240) {
       playUiSound(beginHoverSound);
@@ -1042,7 +1022,10 @@ function showTapToBegin() {
   
   tapToBegin.classList.remove("hidden");
   
-  const onFirstTap = () => {
+  const onFirstTap = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    tapGateDismissing = true;
     window.removeEventListener("click", onFirstTap);
     window.removeEventListener("touchstart", onFirstTap);
     
@@ -1051,8 +1034,15 @@ function showTapToBegin() {
       // Small delay for vibe
       setTimeout(() => {
         tapToBegin.classList.add("hidden");
+        tapGateActive = false;
+        tapGateDismissing = false;
         initBeginPhase();
       }, 400);
+    }).catch(() => {
+      tapToBegin.classList.add("hidden");
+      tapGateActive = false;
+      tapGateDismissing = false;
+      initBeginPhase();
     });
   };
 
